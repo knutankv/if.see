@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Free IFC Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: exact and quiet, a drawing set rather than a dashboard
+   IDEA: an architect's model table under a work lamp
+   PICTURE: the 3D model itself fills the frame; one safety-yellow highlight marks the selection
+   COLOUR and TYPE: white, black, concrete planes, #ffe600 only for selection; Hanken Grotesk
+   LAYOUT: thin toolbar, tree left, model centre, properties right; stacks below 1000px */
+:root{color-scheme:light dark;--bg:light-dark(#fff,#1a1a19);--ink:light-dark(#141414,#ececea);--mute:light-dark(#68685f,#9d9d96);--line:light-dark(#e3e3df,#33332f);--panel:light-dark(#fafaf8,#1f1f1e);--hover:light-dark(#efefeb,#2a2a28);--btn:light-dark(#141414,#ececea);--btnink:light-dark(#fff,#141414);--hi:#ffe600}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'Hanken Grotesk',system-ui,sans-serif;overflow-x:clip}
+.app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100vh;height:100dvh}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:16px;white-space:nowrap}
+.file{color:var(--mute);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34ch}
+.tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto}
+.sep{width:1px;height:24px;background:var(--line);margin:0 2px}
+button,.btn{font:inherit;font-size:14px;min-height:38px;padding:0 12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+button:hover,.btn:hover{background:var(--hover)}
+button:focus-visible,.btn:focus-within,input:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.primary{background:var(--btn);color:var(--btnink);border-color:var(--btn)}
+.primary:hover{background:var(--btn);opacity:.88}
+button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:disabled{opacity:.4;cursor:default}
+.btn input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
+.sec{display:none;align-items:center;gap:6px}.sec.on{display:inline-flex}
+input[type=range]{width:120px;accent-color:var(--ink)}
+@media(pointer:coarse){button,.btn{min-height:44px}}
+.main{display:grid;grid-template-columns:280px minmax(0,1fr) 330px;min-height:0}
+aside{background:var(--panel);display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+#right{border-right:0;border-left:1px solid var(--line)}
+.tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+.tabs button{flex:1;border:0;border-radius:0;background:none;color:var(--mute);border-bottom:2px solid transparent;min-height:42px;justify-content:center}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+.tabs button:hover{background:var(--hover)}
+.ptitle{padding:11px 14px;border-bottom:1px solid var(--line);font-weight:600;flex:none}
+.pane{overflow:auto;flex:1;padding:6px 0 12px}
+.pane[hidden]{display:none}
+.foot{font-size:12.5px;color:var(--mute);padding:10px 14px;border-top:1px solid var(--line);flex:none}
+.row{display:flex;align-items:center;gap:7px;padding:4px 12px 4px 6px;cursor:pointer;border-radius:4px;white-space:nowrap;font-size:14px;margin:0 6px}
+.row:hover{background:var(--hover)}
+.row.sel{background:var(--hi);color:#141414}
+.row .nm{overflow:hidden;text-overflow:ellipsis}
+.cnt{margin-left:auto;color:var(--mute);font-size:12.5px;padding-left:8px;flex:none}
+.row.sel .cnt{color:#44443d}
+.tree details>.kids{padding-left:12px}
+.tree summary{list-style:none}
+.tree summary::-webkit-details-marker{display:none}
+.tree summary::before{content:'';flex:none;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;opacity:.45;transition:transform .15s}
+.tree details[open]>summary::before{transform:rotate(90deg)}
+.leaf{padding-left:22px}
+.eye{margin:0;width:15px;height:15px;accent-color:var(--ink);flex:none}
+.cls{cursor:default}.cls input{margin:0;width:16px;height:16px;accent-color:var(--ink)}
+.sw{width:12px;height:12px;border-radius:2px;flex:none;border:1px solid rgba(0,0,0,.15)}
+#view{position:relative;background:linear-gradient(light-dark(#f7f7f4,#262624),light-dark(#d8d8d4,#151514));overflow:hidden;touch-action:none;min-height:300px}
+#view canvas{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none}
+.hint{position:absolute;left:12px;top:10px;font-size:12.5px;color:var(--mute);pointer-events:none;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:3px 8px;border-radius:4px}
+#stat{position:absolute;right:12px;bottom:10px;font-size:12.5px;color:var(--mute);text-align:right;max-width:60%;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:3px 8px;border-radius:4px}
+#busy,#drop{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:20px}
+#busy.on,#drop.on{display:grid}
+#busy{background:color-mix(in srgb,var(--bg) 55%,transparent)}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:18px 22px;min-width:min(320px,90%);box-shadow:0 10px 40px rgba(0,0,0,.12)}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s}
+#drop{background:color-mix(in srgb,var(--hi) 30%,transparent);border:3px dashed var(--ink);font-size:20px;font-weight:600;pointer-events:none}
+#props .ph{padding:12px 14px 10px;border-bottom:1px solid var(--line)}
+.pc{font-size:13px;color:var(--mute)}
+#props h2{font-size:20px;line-height:1.2;margin:2px 0 8px;font-weight:600;overflow-wrap:anywhere}
+.gid{display:flex;gap:8px;align-items:center}
+.gid code{font-size:12.5px;color:var(--mute);overflow-wrap:anywhere}
+.sm{min-height:30px;padding:0 9px;font-size:13px}
+#props details{border-bottom:1px solid var(--line)}
+#props summary{padding:9px 14px;cursor:pointer;font-weight:600;font-size:14px;display:flex;gap:6px}
+#props summary:hover{background:var(--hover)}
+.kv{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:8px;table-layout:fixed}
+.kv th{text-align:left;font-weight:400;color:var(--mute);padding:3px 8px 3px 14px;width:44%;vertical-align:top;overflow-wrap:anywhere}
+.kv td{padding:3px 14px 3px 0;overflow-wrap:anywhere}
+.empty{padding:22px 16px;color:var(--mute)}
+.empty b{color:var(--ink);font-weight:600}
+.note{padding:10px 14px;color:var(--mute);font-size:13.5px;margin:0}
+.err{color:#b3261e}
+@media(max-width:1000px){
+ .app{height:auto;display:block}
+ .main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
+ #view{height:64vh;order:1}
+ #left{order:2;border-right:0;border-top:1px solid var(--line)}
+ #right{order:3;border-left:0;border-top:1px solid var(--line)}
+ .pane{max-height:55vh}
+ .hint{display:none}
+ #stat{max-width:calc(100% - 24px)}
+}
+@media(max-width:600px){.tools{margin-left:0}.file{max-width:60vw}input[type=range]{width:90px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+ <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 21 7.5v9L12 21.5 3 16.5v-9z"/><path d="M3 7.5 12 12.5 21 7.5M12 12.5v9"/><path d="M12 12.5 21 7.5 12 2.5 3 7.5z" fill="#ffe600" stroke="none" opacity=".9"/><path d="M3 7.5 12 12.5 21 7.5 12 2.5z"/></svg>IFC Viewer</div>
+ <div class="file" id="file">No file</div>
+ <div class="tools">
+  <label class="btn primary">Open IFC<input type="file" id="pick" accept=".ifc,.ifczip,.zip"></label>
+  <button id="bSample">Sample</button>
+  <span class="sep"></span>
+  <button id="bFit" title="Fit view (F)">Fit</button>
+  <button id="bX" aria-pressed="false" title="X-ray (X)">X-ray</button>
+  <button id="bE" aria-pressed="true">Edges</button>
+  <button id="bS" aria-pressed="false">Section</button>
+  <span class="sec" id="secWrap"><input type="range" id="secR" min="0" max="1" step="0.001" value="0.6" aria-label="Section height"></span>
+  <span class="sep"></span>
+  <button id="bH" disabled title="Hide selected (H)">Hide</button>
+  <button id="bI" disabled title="Isolate selected (I)">Isolate</button>
+  <button id="bA" title="Show all (A)">Show all</button>
+ </div>
+</header>
+<div class="main">
+ <aside id="left">
+  <div class="tabs" role="tablist"><button role="tab" aria-selected="true" data-tab="tree">Model tree</button><button role="tab" aria-selected="false" data-tab="cls">Classes</button></div>
+  <div class="pane tree" id="tree"></div>
+  <div class="pane" id="cls" hidden></div>
+  <div class="foot">Files open locally in your browser and are never uploaded.</div>
+ </aside>
+ <main id="view">
+  <div class="hint">Drag to orbit · right-drag to pan · scroll to zoom · click to select · double-click to zoom in</div>
+  <div id="stat"></div>
+  <div id="drop">Drop your .ifc file to open it</div>
+  <div id="busy"><div class="card"><div id="busyT">Loading viewer…</div><div class="bar"><i id="busyB"></i></div></div></div>
+ </main>
+ <aside id="right">
+  <div class="ptitle">Properties</div>
+  <div class="pane" id="props"></div>
+ </aside>
+</div>
+</div>
+<script src="three.min.js"></script>
+<script src="OrbitControls.js"></script>
+<script>
+{
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tick=()=>new Promise(r=>setTimeout(r,0));
+const busy=(t,p)=>{$('#busy').classList.add('on');$('#busyT').textContent=t;$('#busyB').style.width=Math.round((p||0)*100)+'%';};
+const idle=()=>$('#busy').classList.remove('on');
+const fail=msg=>{busy('',0);$('#busyT').innerHTML='<b class="err">Could not open this file.</b><br>'+esc(msg);$('#busyB').parentNode.style.display='none';setTimeout(()=>{idle();$('#busyB').parentNode.style.display='';},6000);};
+if(!window.THREE||!THREE.OrbitControls){busy('',0);$('#busyT').innerHTML='<b class="err">The 3D engine could not load.</b><br>Check your internet connection and reload.';throw new Error('three missing');}
+const V=THREE.Vector3,V2=THREE.Vector2,M4=THREE.Matrix4;
+
+/* ---------- STEP (ISO 10303-21) parser ---------- */
+function decodeStr(s){
+ s=s.replace(/''/g,"'");
+ if(s.indexOf('\\')<0)return s;
+ s=s.replace(/\\X2\\([0-9A-F]+)\\X0\\/gi,(m,h)=>{let o='';for(let i=0;i+4<=h.length;i+=4)o+=String.fromCharCode(parseInt(h.substr(i,4),16));return o;});
+ s=s.replace(/\\X\\([0-9A-F]{2})/gi,(m,h)=>String.fromCharCode(parseInt(h,16)));
+ return s.replace(/\\S\\(.)/g,(m,c)=>String.fromCharCode(c.charCodeAt(0)+128)).replace(/\\\\/g,'\\');
+}
+function parseArgs(text,s){
+ let i=s;
+ const ws=()=>{while(text.charCodeAt(i)<=32)i++;};
+ function val(){
+  ws();const c=text[i];
+  if(c==='('){i++;const arr=[];for(;;){ws();if(text[i]===')'){i++;return arr;}arr.push(val());ws();if(text[i]===',')i++;else if(text[i]!==')')throw new Error('bad list');}}
+  if(c==="'"){let j=i+1;for(;;){const q=text.indexOf("'",j);if(q<0)throw new Error('bad string');if(text[q+1]==="'"){j=q+2;continue;}const raw=text.slice(i+1,q);i=q+1;return decodeStr(raw);}}
+  if(c==='#'){let j=i+1;while(text.charCodeAt(j)>=48&&text.charCodeAt(j)<=57)j++;const r={r:+text.slice(i+1,j)};i=j;return r;}
+  if(c==='$'||c==='*'){i++;return null;}
+  if(c==='.'){const j=text.indexOf('.',i+1);const v=text.slice(i+1,j);i=j+1;return v==='T'?true:v==='F'?false:v==='U'?null:'.'+v+'.';}
+  if(c==='"'){const j=text.indexOf('"',i+1);const v=text.slice(i+1,j);i=j+1;return v;}
+  let j=i;while(j<text.length){const ch=text[j];if(ch===','||ch===')'||ch==='(')break;j++;}
+  const tok=text.slice(i,j).trim();
+  if(text[j]==='('){i=j;const inner=val();return{type:tok.toUpperCase(),v:inner.length===1?inner[0]:inner};}
+  i=j;return parseFloat(tok);
+ }
+ return val();
+}
+class Model{
+ constructor(text){
+  this.text=text;this.ents=new Map();this.types=new Map();
+  let i=text.indexOf('DATA;');if(i<0)throw new Error('This does not look like an IFC (STEP) file.');
+  const hs=text.slice(0,i).match(/FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'/i);this.schema=hs?hs[1]:'IFC';
+  const n=text.length;i+=5;
+  while(i<n){
+   const c=text.charCodeAt(i);
+   if(c===35){
+    let j=i+1,id=0,d;
+    while((d=text.charCodeAt(j)-48)>=0&&d<=9){id=id*10+d;j++;}
+    while(text.charCodeAt(j)<=32)j++;
+    if(text.charCodeAt(j)!==61){i=j;continue;}
+    j++;while(text.charCodeAt(j)<=32)j++;
+    const ts=j;while(j<n&&text.charCodeAt(j)!==40)j++;
+    const type=text.slice(ts,j).trim().toUpperCase(),as=j;
+    let k=j;
+    while(k<n){const ch=text.charCodeAt(k);
+     if(ch===39){k++;while(k<n){if(text.charCodeAt(k)===39){if(text.charCodeAt(k+1)===39){k+=2;continue;}break;}k++;}k++;continue;}
+     if(ch===59)break;k++;}
+    this.ents.set(id,{t:type,s:as,a:undefined});
+    let l=this.types.get(type);if(!l)this.types.set(type,l=[]);l.push(id);
+    i=k+1;
+   }else if(c===69&&text.startsWith('ENDSEC',i))break;
+   else if(c===47&&text.charCodeAt(i+1)===42){const e=text.indexOf('*/',i+2);i=e<0?n:e+2;}
+   else i++;
+  }
+  if(!this.ents.size)throw new Error('The file contains no IFC entities.');
+ }
+ get(id){const e=this.ents.get(id);if(!e)return null;if(e.a===undefined){try{e.a=parseArgs(this.text,e.s);}catch(err){e.a=[];}if(!Array.isArray(e.a))e.a=[];}return e;}
+ A(ref){return ref&&ref.r!=null?this.get(ref.r):null;}
+ of(t){return this.types.get(t)||[];}
+}
+
+/* ---------- names, units, relationships ---------- */
+const WORDS=new Set('wall standard case elemented slab door window column beam member plate railing stair flight ramp roof covering curtain furnishing element building proxy opening space flow terminal segment fitting controller duct pipe cable carrier storey site footing pile reinforcing bar mesh fastener mechanical discrete accessory distribution port chamber energy conversion device moving storage treatment annotation grid virtual transport system furniture shading chimney air light fixture sanitary unitary equipment valve pump tank fan filter boiler outlet switching alarm sensor actuator geographic civil course earthworks fill pavement kerb rail sign signal track deep foundation feature surface projection voiding assembly part bearing tendon anchor type heat exchanger coil damper box cooled electric appliance motor generator protective lamp communications audio visual fire suppression interceptor waste stack medical solar transformer tube bundle humidifier evaporator condenser chiller cooling tower compressor burner engine zone facility bridge road railway marine tunnel project vibration isolator spatial external alignment referent'.split(' '));
+const PN=new Map();
+function pretty(t){
+ if(!t)return'';let r=PN.get(t);if(r)return r;
+ const s=t.replace(/^IFC/,'').toLowerCase(),n=s.length,best=new Array(n+1).fill(null);best[0]=[];
+ for(let i=0;i<n;i++){if(!best[i])continue;for(let j=i+1;j<=n;j++){const w=s.slice(i,j);if(WORDS.has(w)&&(!best[j]||best[j].length>best[i].length+1))best[j]=best[i].concat(w);}}
+ r='Ifc'+(best[n]||[s]).map(w=>w[0].toUpperCase()+w.slice(1)).join('');PN.set(t,r);return r;
+}
+const SPATIAL=new Set(['IFCPROJECT','IFCSITE','IFCBUILDING','IFCBUILDINGSTOREY','IFCFACILITY','IFCFACILITYPART','IFCBRIDGE','IFCBRIDGEPART','IFCROAD','IFCROADPART','IFCRAILWAY','IFCRAILWAYPART','IFCMARINEFACILITY','IFCMARINEPART','IFCTUNNEL','IFCTUNNELPART','IFCSPATIALZONE','IFCEXTERNALSPATIALELEMENT']);
+const PRE={EXA:1e18,PETA:1e15,TERA:1e12,GIGA:1e9,MEGA:1e6,KILO:1e3,HECTO:100,DECA:10,DECI:.1,CENTI:.01,MILLI:.001,MICRO:1e-6,NANO:1e-9};
+const PSYM={KILO:'k',CENTI:'c',MILLI:'m',DECI:'d',MICRO:'µ'};
+const SYM={METRE:'m',SQUARE_METRE:'m²',CUBIC_METRE:'m³',GRAM:'g',SECOND:'s',RADIAN:'rad',KELVIN:'K',DEGREE_CELSIUS:'°C',WATT:'W',NEWTON:'N',PASCAL:'Pa'};
+const en=v=>typeof v==='string'?v.replace(/\./g,''):'';
+function units(m){
+ const U={len:1,ang:1,lab:{}};const pid=m.of('IFCPROJECT')[0];
+ const ua=pid!=null?m.A(m.get(pid).a[8]):null;
+ for(const r of (ua&&ua.a[0])||[]){
+  const u=m.A(r);if(!u)continue;const ut=en(u.a[1]);
+  if(u.t==='IFCSIUNIT'){const pre=en(u.a[2]),nm=en(u.a[3]);U.lab[ut]=(PSYM[pre]||'')+(SYM[nm]||nm.toLowerCase());if(ut==='LENGTHUNIT')U.len=PRE[pre]||1;}
+  else if(u.t.startsWith('IFCCONVERSIONBASEDUNIT')){
+   const mw=m.A(u.a[3]);let f=1;
+   if(mw){const vv=mw.a[0];f=+(vv&&typeof vv==='object'?vv.v:vv)||1;const b=m.A(mw.a[1]);if(b&&b.t==='IFCSIUNIT')f*=PRE[en(b.a[2])]||1;}
+   U.lab[ut]=String(u.a[2]||'').toLowerCase();if(ut==='LENGTHUNIT')U.len=f;if(ut==='PLANEANGLEUNIT')U.ang=f;
+  }
+ }
+ return U;
+}
+function styleColor(m,x){
+ if(Array.isArray(x)){for(const s of x){const c=styleColor(m,s);if(c)return c;}return null;}
+ const e=m.A(x);if(!e)return null;
+ if(e.t==='IFCPRESENTATIONSTYLEASSIGNMENT')return styleColor(m,e.a[0]);
+ if(e.t==='IFCSURFACESTYLE')return styleColor(m,e.a[2]);
+ if(e.t==='IFCSURFACESTYLERENDERING'||e.t==='IFCSURFACESTYLESHADING'){
+  const c=m.A(e.a[0]);if(!c||c.t!=='IFCCOLOURRGB')return null;
+  const tr=typeof e.a[1]==='number'?e.a[1]:0;
+  return [c.a[1],c.a[2],c.a[3],Math.max(.08,1-tr)].map(v=>+(+v||0).toFixed(3));
+ }
+ return null;
+}
+function links(m){
+ const R={parent:new Map(),kids:new Map(),contains:new Map(),psets:new Map(),type:new Map(),mat:new Map(),voids:new Map(),voidOf:new Map(),style:new Map(),matColor:new Map()};
+ const each=(t,f)=>{for(const id of m.of(t)){const e=m.get(id);if(e)f(e.a);}};
+ const push=(map,k,v)=>{let a=map.get(k);if(!a)map.set(k,a=[]);a.push(v);};
+ const L=x=>Array.isArray(x)?x:[];
+ each('IFCRELAGGREGATES',a=>{if(!a[4])return;for(const r of L(a[5])){R.parent.set(r.r,a[4].r);push(R.kids,a[4].r,r.r);}});
+ each('IFCRELCONTAINEDINSPATIALSTRUCTURE',a=>{if(!a[5])return;for(const r of L(a[4])){if(!R.parent.has(r.r))R.parent.set(r.r,a[5].r);push(R.contains,a[5].r,r.r);}});
+ each('IFCRELDEFINESBYPROPERTIES',a=>{const d=Array.isArray(a[5])?a[5]:[a[5]];for(const r of L(a[4]))for(const x of d)if(x&&x.r)push(R.psets,r.r,x.r);});
+ each('IFCRELDEFINESBYTYPE',a=>{for(const r of L(a[4]))if(a[5])R.type.set(r.r,a[5].r);});
+ each('IFCRELASSOCIATESMATERIAL',a=>{for(const r of L(a[4]))if(a[5])R.mat.set(r.r,a[5].r);});
+ each('IFCRELVOIDSELEMENT',a=>{if(a[4]&&a[5]){push(R.voids,a[4].r,a[5].r);R.voidOf.set(a[5].r,a[4].r);}});
+ each('IFCSTYLEDITEM',a=>{if(a[0]){const c=styleColor(m,a[1]);if(c)R.style.set(a[0].r,c);}});
+ each('IFCMATERIALDEFINITIONREPRESENTATION',a=>{if(!a[3])return;for(const rr of L(a[2])){const rep=m.A(rr);for(const it of L(rep&&rep.a[3])){const si=m.A(it);if(si&&si.t==='IFCSTYLEDITEM'){const c=styleColor(m,si.a[1]);if(c&&!R.matColor.has(a[3].r))R.matColor.set(a[3].r,c);}}}});
+ return R;
+}
+function matIds(m,ref,out=[],d=0){
+ const e=m.A(ref);if(!e||d>6)return out;const a=e.a,L=x=>Array.isArray(x)?x:[];
+ switch(e.t){
+  case 'IFCMATERIAL':out.push(ref.r);break;
+  case 'IFCMATERIALLAYERSETUSAGE':case 'IFCMATERIALPROFILESETUSAGE':case 'IFCMATERIALLAYER':matIds(m,a[0],out,d+1);break;
+  case 'IFCMATERIALLAYERSET':case 'IFCMATERIALLIST':for(const x of L(a[0]))matIds(m,x,out,d+1);break;
+  case 'IFCMATERIALCONSTITUENTSET':case 'IFCMATERIALPROFILESET':for(const x of L(a[2]))matIds(m,x,out,d+1);break;
+  case 'IFCMATERIALCONSTITUENT':case 'IFCMATERIALPROFILE':matIds(m,a[2],out,d+1);break;
+ }
+ return out;
+}
+
+/* ---------- small helpers ---------- */
+const area2=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+const clean2=pts=>{const o=[];for(const p of pts){const l=o[o.length-1];if(!l||Math.abs(l.x-p.x)>1e-9||Math.abs(l.y-p.y)>1e-9)o.push(p);}if(o.length>1){const a=o[0],b=o[o.length-1];if(Math.abs(a.x-b.x)<1e-9&&Math.abs(a.y-b.y)<1e-9)o.pop();}return o;};
+const clean3=pts=>{const o=[];for(const p of pts){const l=o[o.length-1];if(!l||l.distanceToSquared(p)>1e-18)o.push(p);}if(o.length>1&&o[0].distanceToSquared(o[o.length-1])<1e-18)o.pop();return o;};
+const pushPts=(o,pts)=>{for(const p of pts){const l=o[o.length-1];if(l&&Math.abs(l[0]-p[0])<1e-9&&Math.abs(l[1]-p[1])<1e-9&&Math.abs((l[2]||0)-(p[2]||0))<1e-9)continue;o.push(p);}};
+function arc3(p1,p2,p3){
+ const ax=p1[0],ay=p1[1],bx=p2[0],by=p2[1],cx=p3[0],cy=p3[1];
+ const d=2*(ax*(by-cy)+bx*(cy-ay)+cx*(ay-by));if(Math.abs(d)<1e-12)return[p1,p3];
+ const ux=((ax*ax+ay*ay)*(by-cy)+(bx*bx+by*by)*(cy-ay)+(cx*cx+cy*cy)*(ay-by))/d;
+ const uy=((ax*ax+ay*ay)*(cx-bx)+(bx*bx+by*by)*(ax-cx)+(cx*cx+cy*cy)*(bx-ax))/d;
+ const r=Math.hypot(ax-ux,ay-uy),T=2*Math.PI,nm=x=>((x%T)+T)%T;
+ const t1=Math.atan2(ay-uy,ax-ux),s2=nm(Math.atan2(by-uy,bx-ux)-t1),s3=nm(Math.atan2(cy-uy,cx-ux)-t1);
+ const sw=s2<s3?s3:s3-T,n=Math.max(3,Math.ceil(Math.abs(sw)/(Math.PI/16))),o=[];
+ for(let i=0;i<=n;i++){const t=t1+sw*i/n;o.push([ux+r*Math.cos(t),uy+r*Math.sin(t),p1[2]||0]);}
+ return o;
+}
+class Sink{
+ constructor(){this.g=new Map();this.cur=null;}
+ use(c){const k=c.join(',');let a=this.g.get(k);if(!a)this.g.set(k,a=[]);this.cur=a;}
+ tri(a,b,c){this.cur.push(a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z);}
+}
+
+/* ---------- CSG (BSP subtraction, after csg.js by Evan Wallace) for openings ---------- */
+let CEPS=1e-5;const CSG_MAX=3000;
+class CPlane{constructor(n,w){this.n=n;this.w=w;}static from(v){const n=v[1].clone().sub(v[0]).cross(v[2].clone().sub(v[0])).normalize();return new CPlane(n,n.dot(v[0]));}
+ clone(){return new CPlane(this.n.clone(),this.w);}flip(){this.n.negate();this.w=-this.w;}
+ split(p,cf,cb,f,b){let pt=0;const ty=[];for(const v of p.v){const t=this.n.dot(v)-this.w,k=t<-CEPS?2:t>CEPS?1:0;pt|=k;ty.push(k);}
+  if(pt===0)(this.n.dot(p.pl.n)>0?cf:cb).push(p);else if(pt===1)f.push(p);else if(pt===2)b.push(p);
+  else{const F=[],B=[],n=p.v.length;for(let i=0;i<n;i++){const j=(i+1)%n,ti=ty[i],tj=ty[j],vi=p.v[i],vj=p.v[j];if(ti!==2)F.push(vi);if(ti!==1)B.push(ti!==2?vi.clone():vi);
+   if((ti|tj)===3){const t=(this.w-this.n.dot(vi))/this.n.dot(vj.clone().sub(vi)),v=vi.clone().lerp(vj,t);F.push(v);B.push(v.clone());}}
+   if(F.length>=3)f.push(new CPoly(F,p.pl.clone()));if(B.length>=3)b.push(new CPoly(B,p.pl.clone()));}}}
+class CPoly{constructor(v,pl){this.v=v;this.pl=pl||CPlane.from(v);}clone(){return new CPoly(this.v.map(x=>x.clone()),this.pl.clone());}flip(){this.v.reverse();this.pl.flip();}}
+class CNode{constructor(ps){this.pl=null;this.f=null;this.b=null;this.ps=[];if(ps)this.build(ps);}
+ invert(){for(const p of this.ps)p.flip();if(this.pl)this.pl.flip();if(this.f)this.f.invert();if(this.b)this.b.invert();const t=this.f;this.f=this.b;this.b=t;}
+ clip(ps){if(!this.pl)return ps.slice();let f=[],b=[];for(const p of ps)this.pl.split(p,f,b,f,b);if(this.f)f=this.f.clip(f);b=this.b?this.b.clip(b):[];return f.concat(b);}
+ clipTo(n){this.ps=n.clip(this.ps);if(this.f)this.f.clipTo(n);if(this.b)this.b.clipTo(n);}
+ all(){let p=this.ps.slice();if(this.f)p=p.concat(this.f.all());if(this.b)p=p.concat(this.b.all());return p;}
+ build(ps){if(!ps.length)return;if(!this.pl)this.pl=ps[0].pl.clone();const f=[],b=[];for(const p of ps)this.pl.split(p,this.ps,this.ps,f,b);if(f.length){if(!this.f)this.f=new CNode();this.f.build(f);}if(b.length){if(!this.b)this.b=new CNode();this.b.build(b);}}}
+function csgSub(A,B){const a=new CNode(A.map(p=>p.clone())),b=new CNode(B.map(p=>p.clone()));a.invert();a.clipTo(b);b.clipTo(a);b.invert();b.clipTo(a);b.invert();a.build(b.all());a.invert();return a.all();}
+function orient(arr){let vol=0;for(let i=0;i<arr.length;i+=9){const ax=arr[i],ay=arr[i+1],az=arr[i+2],bx=arr[i+3],by=arr[i+4],bz=arr[i+5],cx=arr[i+6],cy=arr[i+7],cz=arr[i+8];vol+=ax*(by*cz-bz*cy)-ay*(bx*cz-bz*cx)+az*(bx*cy-by*cx);}
+ if(vol<0)for(let i=0;i<arr.length;i+=9)for(let k=0;k<3;k++){const t=arr[i+3+k];arr[i+3+k]=arr[i+6+k];arr[i+6+k]=t;}return arr;}
+function toPolys(arr){const o=[];for(let i=0;i<arr.length;i+=9){const a=new V(arr[i],arr[i+1],arr[i+2]),b=new V(arr[i+3],arr[i+4],arr[i+5]),c=new V(arr[i+6],arr[i+7],arr[i+8]);if(b.clone().sub(a).cross(c.clone().sub(a)).lengthSq()<1e-20)continue;o.push(new CPoly([a,b,c]));}return o;}
+function fromPolys(ps){const o=[];for(const p of ps){const v=p.v;for(let i=1;i+1<v.length;i++)o.push(v[0].x,v[0].y,v[0].z,v[i].x,v[i].y,v[i].z,v[i+1].x,v[i+1].y,v[i+1].z);}return o;}
+function bbox(arr){const b=[1/0,1/0,1/0,-1/0,-1/0,-1/0];for(let i=0;i<arr.length;i+=3)for(let d=0;d<3;d++){const v=arr[i+d];if(v<b[d])b[d]=v;if(v>b[d+3])b[d+3]=v;}return b;}
+const bbHit=(a,b)=>a[0]<=b[3]&&a[3]>=b[0]&&a[1]<=b[4]&&a[4]>=b[1]&&a[2]<=b[5]&&a[5]>=b[2];
+function subtract(arr,cuts){
+ if(arr.length/9>CSG_MAX)return arr;
+ const bb=bbox(arr);let ps=toPolys(orient(arr.slice())),done=false;
+ for(const c of cuts){if(!bbHit(bb,c.bb))continue;try{ps=csgSub(ps,c.ps);done=true;}catch(e){}if(ps.length>CSG_MAX*4)break;}
+ return done?fromPolys(ps):arr;
+}
+
+/* ---------- geometry ---------- */
+class Geo{
+ constructor(m,R,U){this.m=m;this.R=R;this.U=U;this.pc=new Map();this.lc=new Map();this.oc=new Map();this.skipped=new Map();this.fail=0;}
+ P(ref){const e=this.m.A(ref),c=e&&e.a[0];return Array.isArray(c)?[+c[0]||0,+c[1]||0,+c[2]||0]:[0,0,0];}
+ D(ref){const e=this.m.A(ref),c=e&&e.a[0];return Array.isArray(c)?new V(+c[0]||0,+c[1]||0,+c[2]||0):null;}
+ place(ref){
+  if(!ref)return new M4();let M=this.pc.get(ref.r);if(M)return M;
+  const e=this.m.A(ref);M=new M4();
+  if(e){const a=e.a,l=this.P(a[0]);
+   if(e.t==='IFCAXIS2PLACEMENT2D'){const x=this.D(a[1])||new V(1,0,0);x.z=0;x.normalize();M.makeBasis(x,new V(-x.y,x.x,0),new V(0,0,1)).setPosition(l[0],l[1],0);}
+   else if(e.t==='IFCAXIS2PLACEMENT3D'){
+    const z=(this.D(a[1])||new V(0,0,1)).normalize();
+    let x=this.D(a[2])||(Math.abs(z.x)>.9?new V(0,1,0):new V(1,0,0));
+    x.sub(z.clone().multiplyScalar(x.dot(z)));if(x.lengthSq()<1e-12)x=Math.abs(z.x)>.9?new V(0,1,0):new V(1,0,0);x.normalize();
+    M.makeBasis(x,z.clone().cross(x),z).setPosition(l[0],l[1],l[2]);
+   }else if(e.t==='IFCAXIS1PLACEMENT')M.setPosition(l[0],l[1],l[2]);
+  }
+  this.pc.set(ref.r,M);return M;
+ }
+ objPlace(ref,d=0){
+  if(!ref||d>60)return new M4();let M=this.lc.get(ref.r);if(M)return M;
+  const e=this.m.A(ref);
+  M=e&&e.t==='IFCLOCALPLACEMENT'?(e.a[0]?this.objPlace(e.a[0],d+1).clone().multiply(this.place(e.a[1])):this.place(e.a[1]).clone()):new M4();
+  this.lc.set(ref.r,M);return M;
+ }
+ cto(ref){
+  const e=this.m.A(ref);if(!e)return new M4();const a=e.a,is3=e.t.includes('3D'),nu=e.t.includes('NONUNIFORM');
+  const x=(this.D(a[0])||new V(1,0,0)).normalize(),z=is3&&a[4]?this.D(a[4]).normalize():new V(0,0,1);
+  const y=a[1]?this.D(a[1]).normalize():(is3?z.clone().cross(x).normalize():new V(-x.y,x.x,0));
+  const o=this.P(a[2]),s=typeof a[3]==='number'?a[3]:1,s2=nu&&typeof a[is3?5:4]==='number'?a[is3?5:4]:s,s3=nu&&is3&&typeof a[6]==='number'?a[6]:s;
+  return new M4().makeBasis(x.multiplyScalar(s),y.multiplyScalar(s2),z.multiplyScalar(s3)).setPosition(o[0],o[1],o[2]);
+ }
+ curve(ref,d=0){
+  const e=this.m.A(ref);if(!e||d>20)return[];const a=e.a,T=2*Math.PI;
+  switch(e.t){
+   case 'IFCPOLYLINE':return(a[0]||[]).map(p=>this.P(p));
+   case 'IFCINDEXEDPOLYCURVE':{
+    const pl=this.m.A(a[0]);if(!pl)return[];const P=(pl.a[0]||[]).map(c=>[+c[0],+c[1],+(c[2]||0)]);
+    if(!Array.isArray(a[1]))return P;const o=[];
+    for(const s of a[1]){const ix=Array.isArray(s.v)?s.v:[s.v];const pts=ix.map(k=>P[k-1]).filter(Boolean);pushPts(o,s.type==='IFCARCINDEX'&&pts.length===3?arc3(...pts):pts);}
+    return o;}
+   case 'IFCCOMPOSITECURVE':case 'IFCCOMPOSITECURVEONSURFACE':{
+    const o=[];for(const sr of a[0]||[]){const s=this.m.A(sr);if(!s)continue;let p=this.curve(s.a[2],d+1);if(s.a[1]===false)p=p.slice().reverse();pushPts(o,p);}return o;}
+   case 'IFCCIRCLE':case 'IFCELLIPSE':{
+    const M=this.place(a[0]),r1=+a[1],r2=e.t==='IFCELLIPSE'?+a[2]:r1,o=[];
+    for(let i=0;i<32;i++){const t=i/32*T,v=new V(r1*Math.cos(t),r2*Math.sin(t),0).applyMatrix4(M);o.push([v.x,v.y,v.z]);}return o;}
+   case 'IFCTRIMMEDCURVE':{
+    const b=this.m.A(a[0]);if(!b)return[];const sense=a[3]!==false,par=a[4]==='.PARAMETER.';
+    const tp=tr=>{for(const x of tr||[])if(x&&x.r!=null)return this.P(x);return null;};
+    const tv=tr=>{for(const x of tr||[])if(x&&x.type==='IFCPARAMETERVALUE')return+x.v;return null;};
+    if(b.t==='IFCLINE'){
+     let p1=par?null:tp(a[1]),p2=par?null:tp(a[2]);
+     if(!p1||!p2){const lp=this.P(b.a[0]),ve=this.m.A(b.a[1]),dv=ve?(this.D(ve.a[0])||new V(1,0,0)).normalize().multiplyScalar(+ve.a[1]||1):new V(1,0,0);const at=t=>[lp[0]+dv.x*t,lp[1]+dv.y*t,lp[2]+dv.z*t];p1=p1||at(tv(a[1])||0);p2=p2||at(tv(a[2])||0);}
+     return sense?[p1,p2]:[p2,p1];}
+    if(b.t==='IFCCIRCLE'||b.t==='IFCELLIPSE'){
+     const M=this.place(b.a[0]),inv=M.clone().invert(),r1=+b.a[1],r2=b.t==='IFCELLIPSE'?+b.a[2]:r1;
+     const ang=tr=>{const p=par?null:tp(tr);if(p){const v=new V(p[0],p[1],p[2]).applyMatrix4(inv);return Math.atan2(v.y/r2,v.x/r1);}const t=tv(tr);if(t!=null)return t*this.U.ang;const q=tp(tr);if(q){const v=new V(q[0],q[1],q[2]).applyMatrix4(inv);return Math.atan2(v.y/r2,v.x/r1);}return 0;};
+     let t1=ang(a[1]),t2=ang(a[2]);
+     if(sense){while(t2<=t1+1e-9)t2+=T;}else{while(t2>=t1-1e-9)t2-=T;}
+     const n=Math.max(2,Math.ceil(Math.abs(t2-t1)/(Math.PI/16))),o=[];
+     for(let i=0;i<=n;i++){const t=t1+(t2-t1)*i/n,v=new V(r1*Math.cos(t),r2*Math.sin(t),0).applyMatrix4(M);o.push([v.x,v.y,v.z]);}
+     return o;}
+    return this.curve(a[0],d+1);}
+  }
+  return[];
+ }
+ profile(ref,d=0){
+  const e=this.m.A(ref);if(!e||d>8)return[];const a=e.a;
+  const tf=(pts,i=2)=>{const M=a[i]?this.place(a[i]):null;return pts.map(p=>{if(!M)return new V2(p[0],p[1]);const v=new V(p[0],p[1],0).applyMatrix4(M);return new V2(v.x,v.y);});};
+  const rect=(x,y)=>[[-x/2,-y/2],[x/2,-y/2],[x/2,y/2],[-x/2,y/2]];
+  const ell=(r1,r2,n=28)=>{const o=[];for(let i=0;i<n;i++){const t=i/n*2*Math.PI;o.push([r1*Math.cos(t),r2*Math.sin(t)]);}return o;};
+  const to2=c=>c.map(p=>new V2(p[0],p[1]));
+  const one=(o,h=[])=>[{outer:tf(o),holes:h.map(x=>tf(x))}];
+  const n=i=>+a[i]||0;
+  switch(e.t){
+   case 'IFCRECTANGLEPROFILEDEF':case 'IFCROUNDEDRECTANGLEPROFILEDEF':return one(rect(n(3),n(4)));
+   case 'IFCRECTANGLEHOLLOWPROFILEDEF':{const w=n(5);return one(rect(n(3),n(4)),[rect(n(3)-2*w,n(4)-2*w)]);}
+   case 'IFCCIRCLEPROFILEDEF':return one(ell(n(3),n(3)));
+   case 'IFCCIRCLEHOLLOWPROFILEDEF':return one(ell(n(3),n(3)),[ell(n(3)-n(4),n(3)-n(4))]);
+   case 'IFCELLIPSEPROFILEDEF':return one(ell(n(3),n(4)));
+   case 'IFCISHAPEPROFILEDEF':case 'IFCASYMMETRICISHAPEPROFILEDEF':{const b=n(3),h=n(4),w=n(5),t=n(6);return one([[-b/2,-h/2],[b/2,-h/2],[b/2,-h/2+t],[w/2,-h/2+t],[w/2,h/2-t],[b/2,h/2-t],[b/2,h/2],[-b/2,h/2],[-b/2,h/2-t],[-w/2,h/2-t],[-w/2,-h/2+t],[-b/2,-h/2+t]]);}
+   case 'IFCLSHAPEPROFILEDEF':{const dd=n(3),w=a[4]==null?dd:n(4),t=n(5);return one([[-w/2,-dd/2],[w/2,-dd/2],[w/2,-dd/2+t],[-w/2+t,-dd/2+t],[-w/2+t,dd/2],[-w/2,dd/2]]);}
+   case 'IFCTSHAPEPROFILEDEF':{const dd=n(3),fw=n(4),tw=n(5),tf_=n(6);return one([[-fw/2,dd/2],[-fw/2,dd/2-tf_],[-tw/2,dd/2-tf_],[-tw/2,-dd/2],[tw/2,-dd/2],[tw/2,dd/2-tf_],[fw/2,dd/2-tf_],[fw/2,dd/2]]);}
+   case 'IFCUSHAPEPROFILEDEF':{const dd=n(3),fw=n(4),tw=n(5),t=n(6);return one([[-fw/2,-dd/2],[fw/2,-dd/2],[fw/2,-dd/2+t],[-fw/2+tw,-dd/2+t],[-fw/2+tw,dd/2-t],[fw/2,dd/2-t],[fw/2,dd/2],[-fw/2,dd/2]]);}
+   case 'IFCCSHAPEPROFILEDEF':{const dd=n(3),w=n(4),t=n(5);return one([[-w/2,-dd/2],[w/2,-dd/2],[w/2,-dd/2+t],[-w/2+t,-dd/2+t],[-w/2+t,dd/2-t],[w/2,dd/2-t],[w/2,dd/2],[-w/2,dd/2]]);}
+   case 'IFCZSHAPEPROFILEDEF':{const dd=n(3),fw=n(4),tw=n(5),t=n(6);return one([[-fw+tw/2,dd/2],[tw/2,dd/2],[tw/2,-dd/2+t],[fw-tw/2,-dd/2+t],[fw-tw/2,-dd/2],[-tw/2,-dd/2],[-tw/2,dd/2-t],[-fw+tw/2,dd/2-t]]);}
+   case 'IFCARBITRARYCLOSEDPROFILEDEF':return[{outer:to2(this.curve(a[2])),holes:[]}];
+   case 'IFCARBITRARYPROFILEDEFWITHVOIDS':return[{outer:to2(this.curve(a[2])),holes:(a[3]||[]).map(c=>to2(this.curve(c)))}];
+   case 'IFCDERIVEDPROFILEDEF':{const M=this.cto(a[3]),f=p=>{const v=new V(p.x,p.y,0).applyMatrix4(M);return new V2(v.x,v.y);};return this.profile(a[2],d+1).map(p=>({outer:p.outer.map(f),holes:p.holes.map(h=>h.map(f))}));}
+   case 'IFCCOMPOSITEPROFILEDEF':return(a[2]||[]).flatMap(p=>this.profile(p,d+1));
+  }
+  this.skipped.set(e.t,(this.skipped.get(e.t)||0)+1);return[];
+ }
+ prism(pr,PM,dv,out){
+  let O=clean2(pr.outer);const H=pr.holes.map(clean2).filter(h=>h.length>=3);if(O.length<3)return;
+  if(THREE.ShapeUtils.isClockWise(O))O.reverse();for(const h of H)if(!THREE.ShapeUtils.isClockWise(h))h.reverse();
+  const tris=THREE.ShapeUtils.triangulateShape(O,H),all=O.concat(...H);
+  const B=all.map(p=>new V(p.x,p.y,0).applyMatrix4(PM)),T=all.map(p=>new V(p.x+dv.x,p.y+dv.y,dv.z).applyMatrix4(PM));
+  const fl=(dv.z<0)!==(PM.determinant()<0),tri=(x,y,z)=>fl?out.tri(x,z,y):out.tri(x,y,z);
+  for(let[i,j,k]of tris){if(area2(all[i],all[j],all[k])<0){const t=j;j=k;k=t;}tri(T[i],T[j],T[k]);tri(B[i],B[k],B[j]);}
+  let o=0;for(const L of[O,...H]){const n=L.length;for(let i=0;i<n;i++){const p=o+i,q=o+(i+1)%n;tri(B[p],B[q],T[q]);tri(B[p],T[q],T[p]);}o+=n;}
+ }
+ face(loops,out,fl){
+  const O=clean3(loops[0]);if(O.length<3)return;
+  if(loops.length===1&&O.length===3){fl?out.tri(O[0],O[2],O[1]):out.tri(O[0],O[1],O[2]);return;}
+  const nv=new V();for(let i=0;i<O.length;i++){const a=O[i],b=O[(i+1)%O.length];nv.x+=(a.y-b.y)*(a.z+b.z);nv.y+=(a.z-b.z)*(a.x+b.x);nv.z+=(a.x-b.x)*(a.y+b.y);}
+  const ax=Math.abs(nv.x),ay=Math.abs(nv.y),az=Math.abs(nv.z);let pj;
+  if(az>=ax&&az>=ay)pj=nv.z>0?v=>new V2(v.x,v.y):v=>new V2(v.y,v.x);
+  else if(ax>=ay)pj=nv.x>0?v=>new V2(v.y,v.z):v=>new V2(v.z,v.y);
+  else pj=nv.y>0?v=>new V2(v.z,v.x):v=>new V2(v.x,v.z);
+  const H=loops.slice(1).map(clean3).filter(h=>h.length>=3),o2=O.map(pj),h2=H.map(h=>h.map(pj)),all=O.concat(...H),a2=o2.concat(...h2);
+  for(let[i,j,k]of THREE.ShapeUtils.triangulateShape(o2,h2)){if(area2(a2[i],a2[j],a2[k])<0){const t=j;j=k;k=t;}fl?out.tri(all[i],all[k],all[j]):out.tri(all[i],all[j],all[k]);}
+ }
+ loopPts(lp){
+  if(lp.t==='IFCPOLYLOOP')return(lp.a[0]||[]).map(p=>this.P(p));
+  if(lp.t==='IFCEDGELOOP'){const o=[];for(const r of lp.a[0]||[]){const oe=this.m.A(r);if(!oe)continue;const ec=this.m.A(oe.a[2]);if(!ec)continue;const vx=this.m.A(oe.a[3]!==false?ec.a[0]:ec.a[1]);if(vx)o.push(this.P(vx.a[0]));}return o;}
+  return[];
+ }
+ faces(list,M,out,fl){
+  for(const fr of list||[]){const f=this.m.A(fr);if(!f)continue;const loops=[];let outer=-1;
+   for(const br of f.a[0]||[]){const b=this.m.A(br);if(!b)continue;const lp=this.m.A(b.a[0]);if(!lp)continue;
+    const p=this.loopPts(lp).map(c=>new V(c[0],c[1],c[2]).applyMatrix4(M));if(b.a[1]===false)p.reverse();
+    if(b.t==='IFCFACEOUTERBOUND')outer=loops.length;loops.push(p);}
+   if(outer>0)loops.unshift(loops.splice(outer,1)[0]);if(loops.length)this.face(loops,out,fl);}
+ }
+ shell(ref,M,out,fl){const s=this.m.A(ref);if(s)this.faces(s.a[0],M,out,fl);}
+ coords(ref,M){const pl=this.m.A(ref);return pl?(pl.a[0]||[]).map(c=>new V(+c[0],+c[1],+(c[2]||0)).applyMatrix4(M)):[];}
+ item(ref,M,col,out,d=0){
+  const e=this.m.A(ref);if(!e||d>12)return;const a=e.a,c=this.R.style.get(ref.r)||col;out.use(c);
+  const fl=M.determinant()<0;
+  switch(e.t){
+   case 'IFCEXTRUDEDAREASOLID':case 'IFCEXTRUDEDAREASOLIDTAPERED':{const PM=M.clone().multiply(this.place(a[1])),dv=(this.D(a[2])||new V(0,0,1)).normalize().multiplyScalar(+a[3]||0);for(const pr of this.profile(a[0]))this.prism(pr,PM,dv,out);return;}
+   case 'IFCREVOLVEDAREASOLID':case 'IFCREVOLVEDAREASOLIDTAPERED':return this.revolve(a,M,out);
+   case 'IFCSWEPTDISKSOLID':case 'IFCSWEPTDISKSOLIDPOLYGONAL':return this.disk(a,M,out);
+   case 'IFCBLOCK':{const PM=M.clone().multiply(this.place(a[0])),x=+a[1],y=+a[2];return this.prism({outer:[new V2(0,0),new V2(x,0),new V2(x,y),new V2(0,y)],holes:[]},PM,new V(0,0,+a[3]),out);}
+   case 'IFCRIGHTCIRCULARCYLINDER':{const PM=M.clone().multiply(this.place(a[0])),r=+a[2],o=[];for(let i=0;i<28;i++){const t=i/28*2*Math.PI;o.push(new V2(r*Math.cos(t),r*Math.sin(t)));}return this.prism({outer:o,holes:[]},PM,new V(0,0,+a[1]),out);}
+   case 'IFCFACETEDBREP':case 'IFCFACETEDBREPWITHVOIDS':case 'IFCADVANCEDBREP':case 'IFCADVANCEDBREPWITHVOIDS':return this.shell(a[0],M,out,fl);
+   case 'IFCCLOSEDSHELL':case 'IFCOPENSHELL':case 'IFCCONNECTEDFACESET':return this.faces(a[0],M,out,fl);
+   case 'IFCSHELLBASEDSURFACEMODEL':case 'IFCFACEBASEDSURFACEMODEL':for(const s of a[0]||[])this.shell(s,M,out,fl);return;
+   case 'IFCTRIANGULATEDFACESET':case 'IFCTRIANGULATEDIRREGULARNETWORK':{
+    const P=this.coords(a[0],M),pn=Array.isArray(a[4])&&a[4].length?a[4]:null,g=k=>P[(pn?pn[k-1]:k)-1];
+    for(const t of a[3]||[]){const A=g(t[0]),B=g(t[1]),C=g(t[2]);if(A&&B&&C)fl?out.tri(A,C,B):out.tri(A,B,C);}return;}
+   case 'IFCPOLYGONALFACESET':{
+    const P=this.coords(a[0],M),pn=Array.isArray(a[3])&&a[3].length?a[3]:null,g=k=>P[(pn?pn[k-1]:k)-1];
+    for(const fr of a[2]||[]){const f=this.m.A(fr);if(!f)continue;const loops=[(f.a[0]||[]).map(g).filter(Boolean)];if(f.t==='IFCINDEXEDPOLYGONALFACEWITHVOIDS')for(const h of f.a[1]||[])loops.push(h.map(g).filter(Boolean));this.face(loops,out,fl);}return;}
+   case 'IFCMAPPEDITEM':{const src=this.m.A(a[0]);if(!src)return;const M2=M.clone().multiply(this.cto(a[1])).multiply(this.place(src.a[0])),rep=this.m.A(src.a[1]);for(const it of (rep&&rep.a[3])||[])this.item(it,M2,c,out,d+1);return;}
+   case 'IFCBOOLEANRESULT':case 'IFCBOOLEANCLIPPINGRESULT':this.item(a[1],M,c,out,d+1);if(a[0]==='.UNION.')this.item(a[2],M,c,out,d+1);return;
+   case 'IFCCSGSOLID':return this.item(a[0],M,c,out,d+1);
+   case 'IFCHALFSPACESOLID':case 'IFCPOLYGONALBOUNDEDHALFSPACE':case 'IFCBOXEDHALFSPACE':case 'IFCGEOMETRICCURVESET':case 'IFCGEOMETRICSET':case 'IFCPOLYLINE':case 'IFCINDEXEDPOLYCURVE':case 'IFCCOMPOSITECURVE':case 'IFCTRIMMEDCURVE':case 'IFCBOUNDINGBOX':case 'IFCTEXTLITERAL':case 'IFCTEXTLITERALWITHEXTENT':case 'IFCANNOTATIONFILLAREA':case 'IFCCARTESIANPOINT':case 'IFCCIRCLE':case 'IFCLINE':return;
+  }
+  this.skipped.set(e.t,(this.skipped.get(e.t)||0)+1);
+ }
+ revolve(a,M,out){
+  const PM=M.clone().multiply(this.place(a[1])),ax=this.m.A(a[2]);if(!ax)return;
+  const l=this.P(ax.a[0]),L=new V(l[0],l[1],l[2]),ad=(this.D(ax.a[1])||new V(0,0,1)).normalize();
+  const ang=(+a[3]||0)*this.U.ang,full=Math.abs(ang)>=2*Math.PI-1e-4,n=Math.max(6,Math.ceil(Math.abs(ang)/(Math.PI/16)));
+  for(const pr of this.profile(a[0])){
+   const loops=[clean2(pr.outer),...pr.holes.map(clean2)].filter(x=>x.length>=3);if(!loops.length)continue;
+   const rings=[];for(let s=0;s<=n;s++){const R=PM.clone().multiply(new M4().makeTranslation(L.x,L.y,L.z)).multiply(new M4().makeRotationAxis(ad,ang*s/n)).multiply(new M4().makeTranslation(-L.x,-L.y,-L.z));rings.push(loops.map(lp=>lp.map(p=>new V(p.x,p.y,0).applyMatrix4(R))));}
+   for(let s=0;s<n;s++)for(let li=0;li<loops.length;li++){const A=rings[s][li],B=rings[s+1][li],k=A.length;for(let i=0;i<k;i++){const j=(i+1)%k;out.tri(A[i],A[j],B[j]);out.tri(A[i],B[j],B[i]);}}
+   if(!full){this.face(rings[0],out,true);this.face(rings[n],out,false);}
+  }
+ }
+ disk(a,M,out){
+  const pts=clean3(this.curve(a[0]).map(p=>new V(p[0],p[1],p[2]||0).applyMatrix4(M)));const r=(+a[1]||0)*M.getMaxScaleOnAxis(),k=10;
+  for(let i=0;i+1<pts.length;i++){const p0=pts[i],p1=pts[i+1],ax=p1.clone().sub(p0);if(ax.lengthSq()<1e-18)continue;ax.normalize();
+   const u=Math.abs(ax.x)>.9?new V(0,1,0):new V(1,0,0),v1=u.cross(ax).normalize(),v2=ax.clone().cross(v1);
+   const ring=c=>{const o=[];for(let j=0;j<k;j++){const t=j/k*2*Math.PI;o.push(c.clone().addScaledVector(v1,Math.cos(t)*r).addScaledVector(v2,Math.sin(t)*r));}return o;};
+   const A=ring(p0),B=ring(p1);for(let j=0;j<k;j++){const q=(j+1)%k;out.tri(A[j],A[q],B[q]);out.tri(A[j],B[q],B[j]);}}
+ }
+ items(e){
+  const ps=this.m.A(e.a[6]);if(!ps||!Array.isArray(ps.a[2]))return[];
+  const reps=ps.a[2].map(r=>this.m.A(r)).filter(r=>r&&r.t==='IFCSHAPEREPRESENTATION');
+  const bad=['Axis','FootPrint','Box','Annotation','Profile','Plan','Reference','Clearance','Lighting','CoG','Surface','Survey','Outline'];
+  const rep=reps.find(r=>r.a[1]==='Body')||reps.find(r=>r.a[1]==='Facetation')||reps.find(r=>r.a[1]==='Body-FallBack')||reps.find(r=>!bad.includes(r.a[1]));
+  return rep&&Array.isArray(rep.a[3])?rep.a[3]:[];
+ }
+ baseColor(id,t){
+  const R=this.R,mr=R.mat.get(id)??(R.type.has(id)?R.mat.get(R.type.get(id)):undefined);
+  if(mr!=null)for(const mid of matIds(this.m,{r:mr})){const c=R.matColor.get(mid);if(c)return c;}
+  return DEF[t]||DEF._;
+ }
+ raw(id){const e=this.m.get(id),M=this.objPlace(e.a[5]),s=new Sink(),base=this.baseColor(id,e.t);for(const it of this.items(e))this.item(it,M,base,s);return s.g;}
+ opening(id){
+  if(this.oc.has(id))return this.oc.get(id);let r=null;
+  try{const all=[];for(const arr of this.raw(id).values())for(const v of arr)all.push(v);if(all.length&&all.length/9<=CSG_MAX)r={ps:toPolys(orient(all)),bb:bbox(all)};}catch(e){}
+  this.oc.set(id,r);return r;
+ }
+ product(id){
+  const g=this.raw(id),ops=this.R.voids.get(id);
+  if(ops&&g.size){const cuts=ops.map(o=>this.opening(o)).filter(Boolean);if(cuts.length)for(const[k,arr]of g)g.set(k,subtract(arr,cuts));}
+  return g;
+ }
+}
+const DEF={_:[.8,.8,.78,1],IFCWALL:[.88,.87,.84,1],IFCWALLSTANDARDCASE:[.88,.87,.84,1],IFCWALLELEMENTEDCASE:[.88,.87,.84,1],IFCSLAB:[.72,.72,.7,1],IFCROOF:[.6,.36,.28,1],IFCWINDOW:[.55,.74,.88,.45],IFCDOOR:[.6,.45,.31,1],IFCCOLUMN:[.74,.74,.76,1],IFCBEAM:[.66,.66,.7,1],IFCMEMBER:[.58,.58,.62,1],IFCPLATE:[.6,.78,.9,.5],IFCCURTAINWALL:[.6,.78,.9,.5],IFCRAILING:[.38,.38,.4,1],IFCSTAIR:[.7,.68,.64,1],IFCSTAIRFLIGHT:[.7,.68,.64,1],IFCRAMP:[.7,.68,.64,1],IFCRAMPFLIGHT:[.7,.68,.64,1],IFCCOVERING:[.86,.83,.77,1],IFCFURNISHINGELEMENT:[.76,.6,.44,1],IFCFURNITURE:[.76,.6,.44,1],IFCSPACE:[.35,.6,.95,.18],IFCOPENINGELEMENT:[.95,.45,.3,.35],IFCOPENINGSTANDARDCASE:[.95,.45,.3,.35],IFCFOOTING:[.6,.6,.58,1],IFCPILE:[.6,.6,.58,1],IFCSITE:[.62,.7,.55,1],IFCBUILDINGELEMENTPROXY:[.72,.7,.8,1],IFCFLOWSEGMENT:[.45,.62,.75,1],IFCDUCTSEGMENT:[.62,.7,.78,1],IFCPIPESEGMENT:[.4,.6,.75,1],IFCFLOWTERMINAL:[.85,.85,.88,1],IFCREINFORCINGBAR:[.45,.3,.25,1]};
+
+/* ---------- viewer ---------- */
+const view=$('#view'),renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));view.prepend(renderer.domElement);
+const scene=new THREE.Scene(),world=new THREE.Group();scene.add(world);
+const camera=new THREE.PerspectiveCamera(45,1,.05,5000);camera.position.set(20,16,20);
+scene.add(new THREE.HemisphereLight(0xffffff,0x8a8a80,.75));
+const sun=new THREE.DirectionalLight(0xffffff,.55);sun.position.set(.6,1,.35);scene.add(sun);
+const sun2=new THREE.DirectionalLight(0xffffff,.18);sun2.position.set(-.5,.3,-.8);scene.add(sun2);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.12;controls.screenSpacePanning=true;
+const edgeMat=new THREE.LineBasicMaterial({color:0x000000,transparent:true,opacity:.3});
+const selMat=new THREE.MeshLambertMaterial({color:0xffe600,emissive:0x3a3300,side:THREE.DoubleSide});
+const secPlane=new THREE.Plane(new V(0,-1,0),0);
+const S={m:null,R:null,U:null,P:[],byId:new Map(),selId:null,typeOff:new Set(['IFCOPENINGELEMENT','IFCOPENINGSTANDARDCASE','IFCSPACE','IFCVOIDINGFEATURE']),spOff:new Set(),xray:false,edges:true,section:false,groups:new Map(),tris:0,skipped:'',name:''};
+let selMesh=null;const mats=new Map();
+function applyX(mt){const a=mt.userData.a;if(S.xray){mt.transparent=true;mt.opacity=Math.min(a,.12);mt.depthWrite=false;}else{mt.transparent=a<1;mt.opacity=a;mt.depthWrite=a>=1;}mt.needsUpdate=true;}
+function matFor(k){let mt=mats.get(k);if(!mt){const[r,g,b,a]=k.split(',').map(Number);mt=new THREE.MeshLambertMaterial({color:new THREE.Color(r,g,b),side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});mt.userData.a=isFinite(a)?a:1;mats.set(k,mt);}applyX(mt);return mt;}
+const vis=p=>!p.hidden&&!S.typeOff.has(p.t)&&!p.chain.some(c=>S.spOff.has(c));
+function rebuild(){
+ for(const o of[...world.children]){world.remove(o);o.geometry&&o.geometry.dispose();}
+ const groups=new Map();
+ S.P.forEach((p,i)=>{if(!vis(p))return;for(const c of p.chunks){let g=groups.get(c.k);if(!g)groups.set(c.k,g={n:0,l:[]});g.l.push([i,c.pos]);g.n+=c.pos.length;}});
+ let tris=0;
+ for(const[k,g]of groups){
+  const pos=new Float32Array(g.n),tp=new Int32Array(g.n/9);let o=0;
+  for(const[i,arr]of g.l){pos.set(arr,o);tp.fill(i,o/9,(o+arr.length)/9);o+=arr.length;}
+  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.computeVertexNormals();geo.computeBoundingSphere();
+  const mesh=new THREE.Mesh(geo,matFor(k));mesh.userData.tp=tp;world.add(mesh);tris+=g.n/9;
+ }
+ if(S.edges&&tris<1.5e6)for(const mesh of world.children.slice())if(mesh.isMesh)world.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry,28),edgeMat));
+ S.tris=tris;drawSel();status();
+}
+function drawSel(){
+ if(selMesh){scene.remove(selMesh);selMesh.geometry.dispose();selMesh=null;}
+ const i=S.byId.get(S.selId),p=i!=null?S.P[i]:null;
+ $('#bH').disabled=$('#bI').disabled=!p;
+ if(!p||!vis(p)||!p.chunks.length)return;
+ const n=p.chunks.reduce((s,c)=>s+c.pos.length,0),pos=new Float32Array(n);let o=0;for(const c of p.chunks){pos.set(c.pos,o);o+=c.pos.length;}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.computeVertexNormals();
+ selMesh=new THREE.Mesh(g,selMat);scene.add(selMesh);
+}
+function visBox(only){const b=new THREE.Box3();for(const p of S.P)if((only?p===only:vis(p))&&!p.bb.isEmpty())b.union(p.bb);return b;}
+function fit(box,iso){
+ if(!box||box.isEmpty())return;const c=box.getCenter(new V()),sz=Math.max(box.getSize(new V()).length(),.5);
+ let dv=camera.position.clone().sub(controls.target);if(iso||dv.lengthSq()<1e-9)dv.set(1,.75,1.15);dv.normalize();
+ const dist=sz/2/Math.tan(camera.fov*Math.PI/360)*1.08;
+ controls.target.copy(c);camera.position.copy(c).addScaledVector(dv,dist);
+ camera.near=Math.max(sz/3000,.005);camera.far=sz*60+dist;camera.updateProjectionMatrix();controls.update();
+}
+function resize(){const w=view.clientWidth,h=view.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+const ro=new ResizeObserver(resize);ro.observe(view);
+(function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera);})();
+
+/* picking */
+const ray=new THREE.Raycaster();let down=null;
+renderer.domElement.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];});
+renderer.domElement.addEventListener('pointerup',e=>{if(!down||e.button!==0)return;const moved=Math.hypot(e.clientX-down[0],e.clientY-down[1]);down=null;if(moved<5)select(pick(e),true);});
+renderer.domElement.addEventListener('dblclick',e=>{const id=pick(e);if(id!=null){select(id,true);zoomSel();}});
+function pick(e){
+ const r=renderer.domElement.getBoundingClientRect();
+ ray.setFromCamera(new V2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);
+ for(const h of ray.intersectObjects(world.children.filter(o=>o.isMesh),false)){if(S.section&&h.point.y>secPlane.constant+1e-6)continue;const p=S.P[h.object.userData.tp[h.faceIndex]];if(p)return p.id;}
+ return null;
+}
+function zoomSel(){const i=S.byId.get(S.selId);if(i!=null&&!S.P[i].bb.isEmpty())fit(S.P[i].bb);}
+
+/* ---------- loading ---------- */
+function productIds(m){
+ const skip=/^IFC(REL|PROPERTY|QUANTITY|MATERIAL|STYLE|SURFACESTYLE|COLOUR|PRESENTATION|CARTESIAN|DIRECTION|AXIS|LOCALPLACEMENT|POLY|FACE|INDEXED|SHAPE|PRODUCTDEFINITIONSHAPE|EXTRUDED|TRIANGULATED|OWNERHISTORY|ELEMENTQUANTITY|.*TYPE$|.*PROFILEDEF$)/;
+ const out=[];
+ for(const[t,ids]of m.types){
+  if(skip.test(t))continue;const f=m.get(ids[0]);if(!f||f.a.length<7||typeof f.a[0]!=='string')continue;
+  for(const id of ids){const a=m.get(id).a;if(a[6]&&a[6].r!=null){const ps=m.ents.get(a[6].r);if(ps&&ps.t==='IFCPRODUCTDEFINITIONSHAPE')out.push(id);}}
+ }
+ return out;
+}
+function ancestors(R,id){const a=[];let x=id;for(let g=0;g<60;g++){const p=R.parent.get(x)??R.voidOf.get(x);if(p==null||a.includes(p))break;a.push(p);x=p;}return a;}
+async function load(text,name){
+ $('#busyB').parentNode.style.display='';busy('Reading '+name,.02);await tick();
+ const t0=performance.now();let m;
+ try{m=new Model(text);}catch(e){return fail(e.message);}
+ busy('Linking objects',.06);await tick();
+ const U=units(m);CEPS=1e-5/U.len;const R=links(m),G=new Geo(m,R,U),ids=productIds(m),raw=[];
+ let last=performance.now();
+ for(let i=0;i<ids.length;i++){
+  let g=null;try{g=G.product(ids[i]);}catch(e){G.fail++;}
+  raw.push([ids[i],g]);
+  if(performance.now()-last>60){busy(`Building geometry · ${(i+1).toLocaleString()} of ${ids.length.toLocaleString()}`,.08+.86*i/ids.length);await tick();last=performance.now();}
+ }
+ busy('Preparing scene',.96);await tick();
+ const mn=[1/0,1/0,1/0],mx=[-1/0,-1/0,-1/0];
+ for(const[id,g]of raw){if(!g)continue;const t=m.ents.get(id).t;if(t==='IFCSITE')continue;for(const arr of g.values())for(let k=0;k<arr.length;k+=3)for(let d=0;d<3;d++){const v=arr[k+d];if(v<mn[d])mn[d]=v;if(v>mx[d])mx[d]=v;}}
+ if(!isFinite(mn[0])){mn.fill(0);mx.fill(0);}
+ const cx=(mn[0]+mx[0])/2,cy=(mn[1]+mx[1])/2,cz=mn[2],s=U.len,P=[],tmp=new V();
+ for(const[id,g]of raw){
+  const chunks=[],bb=new THREE.Box3();let tris=0;
+  if(g)for(const[k,arr]of g){if(!arr.length)continue;const f=new Float32Array(arr.length);
+   for(let q=0;q<arr.length;q+=3){const x=(arr[q]-cx)*s,y=(arr[q+2]-cz)*s,z=-(arr[q+1]-cy)*s;f[q]=x;f[q+1]=y;f[q+2]=z;bb.expandByPoint(tmp.set(x,y,z));}
+   chunks.push({k,pos:f});tris+=arr.length/9;}
+  P.push({id,t:m.ents.get(id).t,chunks,bb,tris,chain:ancestors(R,id),hidden:false});
+ }
+ Object.assign(S,{m,R,U,P,byId:new Map(P.map((p,i)=>[p.id,i])),selId:null,groups:new Map(),spOff:new Set(),name});
+ S.skipped=[...G.skipped].sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t,n])=>`${pretty(t)} ×${n}`).join(', ');
+ S.fail=G.fail;S.ms=performance.now()-t0;
+ $('#file').textContent=`${name} · ${m.schema}`;$('#file').title=name;
+ renderTree();renderClasses();renderProps(null);rebuild();fit(visBox(),true);setSection();idle();
+}
+function status(){
+ if(!S.m){$('#stat').textContent='';return;}
+ const n=S.P.filter(vis).length;
+ $('#stat').textContent=`${n.toLocaleString()} of ${S.P.length.toLocaleString()} elements shown · ${Math.round(S.tris).toLocaleString()} triangles · units ${S.U.lab.LENGTHUNIT||'m'}`+(S.skipped?` · not drawn: ${S.skipped}`:'')+(S.fail?` · ${S.fail} failed`:'');
+}
+async function readFile(f){
+ const u8=new Uint8Array(await f.arrayBuffer());
+ if(u8[0]===0x50&&u8[1]===0x4b)return unzip(u8);
+ return new TextDecoder('utf-8').decode(u8);
+}
+async function unzip(u8){
+ const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);let eo=-1;
+ for(let i=u8.length-22;i>=Math.max(0,u8.length-65558);i--)if(dv.getUint32(i,true)===0x06054b50){eo=i;break;}
+ if(eo<0)throw new Error('Could not read the zip archive.');
+ let p=dv.getUint32(eo+16,true);const n=dv.getUint16(eo+10,true),td=new TextDecoder();
+ for(let k=0;k<n;k++){
+  if(dv.getUint32(p,true)!==0x02014b50)break;
+  const meth=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),lo=dv.getUint32(p+42,true),nm=td.decode(u8.subarray(p+46,p+46+nl));
+  p+=46+nl+xl+cl;if(!/\.ifc$/i.test(nm))continue;
+  const ds=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true),data=u8.subarray(ds,ds+cs);
+  if(meth===0)return td.decode(data);
+  if(meth===8){if(!window.DecompressionStream)throw new Error('This browser cannot unzip .ifczip files. Unzip it first.');return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();}
+  throw new Error('Unsupported zip compression.');
+ }
+ throw new Error('No .ifc file found inside the archive.');
+}
+async function openFile(f){if(!f)return;try{busy('Opening '+f.name,.01);await tick();await load(await readFile(f),f.name);}catch(e){fail(e.message||String(e));}}
+
+/* ---------- tree, classes, properties ---------- */
+const nameOf=id=>{const e=S.m.get(id);return e?(typeof e.a[2]==='string'&&e.a[2]?e.a[2]:pretty(e.t)):'#'+id;};
+const isSp=id=>SPATIAL.has(S.m.ents.get(id)?.t);
+function spNode(id,d){
+ const e=S.m.get(id),nm=nameOf(id);
+ return `<details data-sp="${id}" data-d="${d}"${d<4?' open':''}><summary class="row" data-id="${id}"><input type="checkbox" class="eye" data-hide="${id}" checked aria-label="Show ${esc(nm)}"><span class="nm">${esc(nm)}</span><span class="cnt">${esc(pretty(e.t).slice(3))}</span></summary><div class="kids"></div></details>`;
+}
+function collect(sp){
+ const out=[],seen=new Set(),R=S.R;
+ const add=id=>{if(seen.has(id))return;seen.add(id);out.push(id);for(const k of R.kids.get(id)||[])if(!isSp(k))add(k);for(const o of R.voids.get(id)||[])add(o);};
+ for(const id of R.contains.get(sp)||[])add(id);for(const k of R.kids.get(sp)||[])if(!isSp(k))add(k);
+ return out;
+}
+function fill(det){
+ if(det.dataset.f)return;det.dataset.f='1';const box=det.querySelector(':scope>.kids');let h='';
+ if(det.dataset.g){h=(S.groups.get(det.dataset.g)||[]).map(id=>`<div class="row leaf" data-id="${id}"><span class="nm">${esc(nameOf(id))}</span></div>`).join('');}
+ else{
+  const id=+det.dataset.sp,d=+det.dataset.d;
+  for(const k of S.R.kids.get(id)||[])if(isSp(k))h+=spNode(k,d+1);
+  const by=new Map();for(const e of collect(id)){const t=S.m.ents.get(e).t;if(!by.has(t))by.set(t,[]);by.get(t).push(e);}
+  for(const[t,ids]of[...by].sort((a,b)=>pretty(a[0]).localeCompare(pretty(b[0])))){const key=id+':'+t;S.groups.set(key,ids);h+=`<details data-g="${key}"><summary class="row"><span class="nm">${esc(pretty(t))}</span><span class="cnt">${ids.length}</span></summary><div class="kids"></div></details>`;}
+ }
+ box.innerHTML=h;
+ for(const c of box.querySelectorAll(':scope>details[open]'))fill(c);
+}
+function renderTree(){
+ const tree=$('#tree'),roots=S.m.of('IFCPROJECT');let h=roots.map(id=>spNode(id,0)).join('');
+ const orph=S.P.filter(p=>!p.chain.length&&!SPATIAL.has(p.t)).map(p=>p.id);
+ if(orph.length){S.groups.set('orph',orph);h+=`<details data-g="orph"><summary class="row"><span class="nm">Not in spatial structure</span><span class="cnt">${orph.length}</span></summary><div class="kids"></div></details>`;}
+ tree.innerHTML=h||'<p class="note">No spatial structure found.</p>';
+ for(const d of tree.querySelectorAll(':scope>details[open]'))fill(d);
+}
+function reveal(id){
+ const tree=$('#tree'),chain=ancestors(S.R,id).reverse();
+ for(const a of chain){const d=tree.querySelector(`details[data-sp="${a}"]`);if(d){d.open=true;fill(d);}}
+ const sp=chain.filter(isSp).pop();const g=tree.querySelector(`details[data-g="${sp}:${S.m.ents.get(id).t}"]`)||(!chain.length&&tree.querySelector('details[data-g="orph"]'));
+ if(g){g.open=true;fill(g);}
+}
+function markTree(id,scroll){
+ const tree=$('#tree');for(const r of tree.querySelectorAll('.row.sel'))r.classList.remove('sel');if(id==null)return;
+ let row=tree.querySelector(`.row[data-id="${id}"]`);if(!row&&scroll){reveal(id);row=tree.querySelector(`.row[data-id="${id}"]`);}
+ if(row){row.classList.add('sel');if(scroll&&!$('#tree').hidden){const pr=tree.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<pr.top||rr.bottom>pr.bottom)tree.scrollTop+=rr.top-pr.top-pr.height/2;}}
+}
+function renderClasses(){
+ const cnt=new Map();for(const p of S.P){const c=cnt.get(p.t)||{n:0,k:null};c.n++;if(!c.k&&p.chunks.length)c.k=p.chunks[0].k;cnt.set(p.t,c);}
+ $('#cls').innerHTML=[...cnt].sort((a,b)=>b[1].n-a[1].n).map(([t,c])=>{const col=(c.k?c.k.split(',').map(Number):DEF[t]||DEF._).slice(0,3).map(v=>Math.round(v*255)).join(',');
+  return `<label class="row cls"><input type="checkbox" data-t="${t}"${S.typeOff.has(t)?'':' checked'}><span class="sw" style="background:rgb(${col})"></span><span class="nm">${esc(pretty(t))}</span><span class="cnt">${c.n}</span></label>`;}).join('')||'<p class="note">No elements with geometry.</p>';
+}
+const fmtNum=v=>Number.isInteger(v)?String(v):String(+v.toPrecision(6));
+function fmt(v){
+ if(v==null)return'';if(Array.isArray(v))return v.map(fmt).filter(Boolean).join(', ');
+ if(typeof v==='object')return'v'in v?fmt(v.v):'';if(typeof v==='boolean')return v?'Yes':'No';if(typeof v==='number')return fmtNum(v);
+ return /^\.[A-Z0-9_]+\.$/.test(v)?v.slice(1,-1):v;
+}
+function propRows(ref,pre=''){
+ const p=S.m.A(ref);if(!p)return[];const a=p.a,n=pre+(a[0]||'');
+ switch(p.t){
+  case 'IFCPROPERTYSINGLEVALUE':case 'IFCPROPERTYENUMERATEDVALUE':case 'IFCPROPERTYLISTVALUE':return[[n,fmt(a[2])]];
+  case 'IFCPROPERTYBOUNDEDVALUE':return[[n,[fmt(a[3]),fmt(a[2])].filter(Boolean).join(' – ')]];
+  case 'IFCCOMPLEXPROPERTY':return(a[3]||[]).flatMap(r=>propRows(r,n+' · '));
+  case 'IFCPROPERTYREFERENCEVALUE':return[[n,'(reference)']];
+  case 'IFCPROPERTYTABLEVALUE':return[[n,'(table)']];
+ }
+ return[];
+}
+const QU={IFCQUANTITYLENGTH:'LENGTHUNIT',IFCQUANTITYAREA:'AREAUNIT',IFCQUANTITYVOLUME:'VOLUMEUNIT',IFCQUANTITYWEIGHT:'MASSUNIT',IFCQUANTITYTIME:'TIMEUNIT'};
+function pset(id){
+ const e=S.m.get(id);if(!e)return null;const a=e.a;
+ if(e.t==='IFCPROPERTYSET')return{name:a[2]||'Property set',rows:(a[4]||[]).flatMap(r=>propRows(r))};
+ if(e.t==='IFCELEMENTQUANTITY')return{name:a[2]||'Quantities',rows:(a[5]||[]).map(r=>{const q=S.m.A(r);if(!q)return null;const u=S.U.lab[QU[q.t]]||'';return[q.a[0]||'',fmt(q.a[3])+(u?' '+u:'')];}).filter(Boolean)};
+ return null;
+}
+const kv=rows=>`<table class="kv"><tbody>${rows.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`;
+function renderProps(id){
+ const box=$('#props');
+ if(id==null||!S.m){box.innerHTML=S.m?`<div class="empty"><b>Nothing selected.</b><br>Click an element in the model or the tree to see its attributes, property sets and quantities.</div>`:'';return;}
+ const m=S.m,e=m.get(id),a=e.a,rows=[],str=v=>typeof v==='string'?v:'',add=(k,v)=>{if(v!==''&&v!=null)rows.push([k,String(v)]);};
+ add('Class',pretty(e.t));add('Name',str(a[2]));add('Description',str(a[3]));add('Object type',str(a[4]));
+ if(a.length>7&&!SPATIAL.has(e.t)&&e.t!=='IFCSPACE')add('Tag',str(a[7]));
+ const last=a[a.length-1];if(typeof last==='string'&&/^\.[A-Z_]+\.$/.test(last)&&last!=='.NOTDEFINED.')add('Predefined type',last.slice(1,-1));
+ if(e.t==='IFCSPACE')add('Long name',str(a[7]));
+ if(e.t==='IFCBUILDINGSTOREY'&&typeof a[9]==='number')add('Elevation',fmtNum(a[9])+' '+(S.U.lab.LENGTHUNIT||''));
+ const ty=S.R.type.get(id),te=ty!=null?m.get(ty):null;if(te)add('Type',`${str(te.a[2])} (${pretty(te.t)})`);
+ const mr=S.R.mat.get(id)??(ty!=null?S.R.mat.get(ty):undefined);
+ if(mr!=null){const names=[...new Set(matIds(m,{r:mr}).map(x=>str(m.get(x).a[0])).filter(Boolean))];add('Material',names.join(', '));}
+ const par=S.R.parent.get(id)??S.R.voidOf.get(id);if(par!=null)add(S.R.voidOf.has(id)?'Voids':'Contained in',nameOf(par));
+ const pi=S.byId.get(id);if(pi!=null)add('Triangles',S.P[pi].tris.toLocaleString());
+ add('Entity','#'+id);
+ const sets=[];for(const p of S.R.psets.get(id)||[]){const r=pset(p);if(r&&r.rows.length)sets.push(r);}
+ if(te)for(const r of Array.isArray(te.a[5])?te.a[5]:[]){const d=pset(r.r);if(d&&d.rows.length){d.name+=' (type)';sets.push(d);}}
+ box.innerHTML=`<div class="ph"><div class="pc">${esc(pretty(e.t))}</div><h2>${esc(str(a[2])||pretty(e.t))}</h2>${typeof a[0]==='string'?`<div class="gid"><code>${esc(a[0])}</code><button class="sm" data-copy="${esc(a[0])}">Copy</button></div>`:''}</div>`
+  +`<details open><summary>Attributes</summary>${kv(rows)}</details>`
+  +sets.map(s=>`<details open><summary>${esc(s.name)}<span class="cnt">${s.rows.length}</span></summary>${kv(s.rows)}</details>`).join('')
+  +(sets.length?'':'<p class="note">No property sets attached.</p>');
+}
+function select(id,scroll){S.selId=id;drawSel();renderProps(id);markTree(id,scroll);}
+function setSection(){
+ const on=S.section;$('#bS').setAttribute('aria-pressed',on);$('#secWrap').classList.toggle('on',on);
+ const b=visBox();if(b.isEmpty()){renderer.clippingPlanes=[];return;}
+ secPlane.constant=b.min.y+(b.max.y-b.min.y)*+$('#secR').value+1e-4;renderer.clippingPlanes=on?[secPlane]:[];
+}
+
+/* ---------- events ---------- */
+$('#pick').addEventListener('change',e=>{openFile(e.target.files[0]);e.target.value='';});
+$('#bSample').addEventListener('click',()=>load(sampleIFC(),'sample-house.ifc'));
+$('#bFit').addEventListener('click',()=>fit(visBox()));
+$('#bX').addEventListener('click',()=>{S.xray=!S.xray;$('#bX').setAttribute('aria-pressed',S.xray);for(const mt of mats.values())applyX(mt);edgeMat.opacity=S.xray?.15:.3;});
+$('#bE').addEventListener('click',()=>{S.edges=!S.edges;$('#bE').setAttribute('aria-pressed',S.edges);rebuild();});
+$('#bS').addEventListener('click',()=>{S.section=!S.section;setSection();});
+$('#secR').addEventListener('input',setSection);
+const hideSel=()=>{const i=S.byId.get(S.selId);if(i==null)return;S.P[i].hidden=true;select(null);rebuild();};
+const isolate=()=>{const i=S.byId.get(S.selId);if(i==null)return;S.P.forEach((p,j)=>p.hidden=j!==i);const p=S.P[i];S.typeOff.delete(p.t);for(const c of p.chain)S.spOff.delete(c);for(const cb of document.querySelectorAll('[data-hide],[data-t]'))cb.checked=true;rebuild();fit(visBox());};
+const showAll=()=>{S.P.forEach(p=>p.hidden=false);S.spOff.clear();for(const cb of document.querySelectorAll('[data-hide]'))cb.checked=true;rebuild();};
+$('#bH').addEventListener('click',hideSel);$('#bI').addEventListener('click',isolate);$('#bA').addEventListener('click',showAll);
+for(const t of document.querySelectorAll('[data-tab]'))t.addEventListener('click',()=>{for(const x of document.querySelectorAll('[data-tab]'))x.setAttribute('aria-selected',x===t);$('#tree').hidden=t.dataset.tab!=='tree';$('#cls').hidden=t.dataset.tab!=='cls';});
+$('#tree').addEventListener('toggle',e=>{if(e.target.open&&e.target.tagName==='DETAILS')fill(e.target);},true);
+$('#tree').addEventListener('change',e=>{const id=e.target.dataset.hide;if(id==null)return;e.target.checked?S.spOff.delete(+id):S.spOff.add(+id);rebuild();});
+$('#tree').addEventListener('click',e=>{if(e.target.matches('input'))return;const r=e.target.closest('.row[data-id]');if(r)select(+r.dataset.id,false);});
+$('#tree').addEventListener('dblclick',e=>{const r=e.target.closest('.row[data-id]');if(r){select(+r.dataset.id);zoomSel();}});
+$('#cls').addEventListener('change',e=>{const t=e.target.dataset.t;if(!t)return;e.target.checked?S.typeOff.delete(t):S.typeOff.add(t);rebuild();});
+$('#props').addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if(!b)return;try{navigator.clipboard.writeText(b.dataset.copy).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1400);},()=>{b.textContent='Select & copy';});}catch(err){}});
+let dragN=0;
+addEventListener('dragenter',e=>{e.preventDefault();dragN++;$('#drop').classList.add('on');});
+addEventListener('dragleave',()=>{if(--dragN<=0){dragN=0;$('#drop').classList.remove('on');}});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{e.preventDefault();dragN=0;$('#drop').classList.remove('on');openFile(e.dataTransfer.files[0]);});
+addEventListener('keydown',e=>{if(e.target.matches('input,textarea')||e.metaKey||e.ctrlKey||e.altKey)return;const k=e.key.toLowerCase();
+ if(k==='f')fit(visBox());else if(k==='x')$('#bX').click();else if(k==='h')hideSel();else if(k==='i')isolate();else if(k==='a')showAll();else if(k==='escape')select(null);});
+
+/* ---------- sample model (generated IFC4 text, parsed like any other file) ---------- */
+function sampleIFC(){
+ let n=0,seed=11;const L=[],add=s=>{L.push(`#${++n}=${s};`);return'#'+n;};
+ const f=v=>{const s=String(+(+v).toFixed(6));return/[.e]/.test(s)?s:s+'.';};
+ const C='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$',gid=()=>{let s='';for(let i=0;i<22;i++){seed=seed*16807%2147483647;s+=C[seed%64];}return`'${s}'`;};
+ const P=(...c)=>add(`IFCCARTESIANPOINT((${c.map(f).join(',')}))`),Dr=(...c)=>add(`IFCDIRECTION((${c.map(f).join(',')}))`);
+ const Z=Dr(0,0,1),X=Dr(1,0,0),NY=Dr(0,-1,0),Y=Dr(0,1,0);
+ const A3=(x=0,y=0,z=0,r=0)=>add(`IFCAXIS2PLACEMENT3D(${P(x,y,z)},${Z},${r?Dr(Math.cos(r),Math.sin(r),0):X})`),A2=(x=0,y=0)=>add(`IFCAXIS2PLACEMENT2D(${P(x,y)},$)`);
+ const LP=(rel,pl)=>add(`IFCLOCALPLACEMENT(${rel||'$'},${pl})`);
+ const ctx=add(`IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,${A3()},$)`),body=add(`IFCGEOMETRICREPRESENTATIONSUBCONTEXT('Body','Model',*,*,*,*,${ctx},$,.MODEL_VIEW.,$)`);
+ const ua=add(`IFCUNITASSIGNMENT((${add('IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)')},${add('IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)')},${add('IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.)')},${add('IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.)')}))`);
+ const proj=add(`IFCPROJECT(${gid()},$,'Sample house',$,$,$,$,(${ctx}),${ua})`);
+ const sPl=LP(null,A3()),site=add(`IFCSITE(${gid()},$,'Site',$,$,${sPl},$,$,.ELEMENT.,$,$,$,$,$)`);
+ const bPl=LP(sPl,A3()),bld=add(`IFCBUILDING(${gid()},$,'Sample house',$,$,${bPl},$,$,.ELEMENT.,$,$,$)`);
+ const gPl=LP(bPl,A3()),gf=add(`IFCBUILDINGSTOREY(${gid()},$,'Ground floor',$,$,${gPl},$,$,.ELEMENT.,0.)`);
+ const rPl=LP(bPl,A3(0,0,3000)),rf=add(`IFCBUILDINGSTOREY(${gid()},$,'Roof',$,$,${rPl},$,$,.ELEMENT.,3000.)`);
+ const agg=(a,b)=>add(`IFCRELAGGREGATES(${gid()},$,$,$,${a},(${b}))`);agg(proj,site);agg(site,bld);agg(bld,gf+','+rf);
+ const st=(r,g,b,t=0)=>add(`IFCSURFACESTYLE($,.BOTH.,(${add(`IFCSURFACESTYLERENDERING(${add(`IFCCOLOURRGB($,${f(r)},${f(g)},${f(b)})`)},${f(t)},$,$,$,$,$,$,.NOTDEFINED.)`)}))`);
+ const sW=st(.94,.93,.9),sIn=st(.97,.96,.94),sSl=st(.66,.66,.64),sRf=st(.36,.38,.4),sGl=st(.55,.75,.9,.55),sDr=st(.62,.46,.31),sFr=st(.22,.22,.22),sCo=st(.8,.8,.82),sBm=st(.42,.3,.22);
+ const shape=pairs=>{for(const[i,s]of pairs)if(s)add(`IFCSTYLEDITEM(${i},(${s}),$)`);return add(`IFCPRODUCTDEFINITIONSHAPE($,$,(${add(`IFCSHAPEREPRESENTATION(${body},'Body','SweptSolid',(${pairs.map(p=>p[0]).join(',')}))`)}))`);};
+ const box=(x,y,h,z=0)=>add(`IFCEXTRUDEDAREASOLID(${add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,${A2()},${f(x)},${f(y)})`)},${A3(0,0,z)},${Z},${f(h)})`);
+ const vert=(prof,y,z,dp)=>add(`IFCEXTRUDEDAREASOLID(${prof},${add(`IFCAXIS2PLACEMENT3D(${P(0,y,z)},${NY},${X})`)},${Z},${f(dp)})`);
+ const G=[],RF=[],el=(arr,type,nm,pl,shp,tail='')=>{const e=add(`${type}(${gid()},$,'${nm}',$,$,${pl},${shp},$${tail})`);arr.push(e);return e;};
+ const pset=(objs,nm,props)=>{const ps=add(`IFCPROPERTYSET(${gid()},$,'${nm}',$,(${props.map(([k,t,v])=>add(`IFCPROPERTYSINGLEVALUE('${k}',$,${t}(${v}),$)`)).join(',')}))`);add(`IFCRELDEFINESBYPROPERTIES(${gid()},$,$,$,(${objs.join(',')}),${ps})`);};
+ const qto=(o,nm,qs)=>{const q=add(`IFCELEMENTQUANTITY(${gid()},$,'${nm}',$,$,(${qs.map(([k,t,v])=>add(`${t}('${k}',$,$,${f(v)},$)`)).join(',')}))`);add(`IFCRELDEFINESBYPROPERTIES(${gid()},$,$,$,(${o}),${q})`);};
+ const mat=(nm,s)=>{const m=add(`IFCMATERIAL('${nm}',$,$)`);if(s)add(`IFCMATERIALDEFINITIONREPRESENTATION($,$,(${add(`IFCSTYLEDREPRESENTATION(${ctx},$,$,(${add(`IFCSTYLEDITEM($,(${s}),$)`)}))`)}),${m})`);return m;};
+ const assoc=(objs,m)=>add(`IFCRELASSOCIATESMATERIAL(${gid()},$,$,$,(${objs.join(',')}),${m})`);
+ const W=9000,Dp=6600,T=250,H=3000;
+ const slab=el(G,'IFCSLAB','Ground slab',LP(gPl,A3(W/2,Dp/2,-250)),shape([[box(W+T,Dp+T,250),sSl]]),',.FLOOR.');
+ pset([slab],'Pset_SlabCommon',[['IsExternal','IFCBOOLEAN','.F.'],['LoadBearing','IFCBOOLEAN','.T.']]);qto(slab,'Qto_SlabBaseQuantities',[['Width','IFCQUANTITYLENGTH',250],['GrossArea','IFCQUANTITYAREA',(W+T)*(Dp+T)/1e6]]);
+ const wt=add(`IFCWALLTYPE(${gid()},$,'Exterior wall 250',$,$,$,$,$,$,.STANDARD.)`);
+ const walls=[['South wall',W/2,0,W+T,0],['North wall',W/2,Dp,W+T,0],['West wall',0,Dp/2,Dp-T,Math.PI/2],['East wall',W,Dp/2,Dp-T,Math.PI/2],['Interior wall',5200,Dp/2,Dp-T,Math.PI/2]].map(([nm,x,y,l,r])=>{
+  const th=nm[0]==='I'?120:T,pl=LP(gPl,A3(x,y,0,r)),w=el(G,'IFCWALL',nm,pl,shape([[box(l,th,H),th<T?sIn:sW]]),',.STANDARD.');
+  qto(w,'Qto_WallBaseQuantities',[['Length','IFCQUANTITYLENGTH',l],['Width','IFCQUANTITYLENGTH',th],['Height','IFCQUANTITYLENGTH',H],['GrossSideArea','IFCQUANTITYAREA',l*H/1e6]]);
+  return{w,pl,th,ext:th===T};});
+ const ext=walls.filter(w=>w.ext).map(w=>w.w);
+ add(`IFCRELDEFINESBYTYPE(${gid()},$,$,$,(${ext.join(',')}),${wt})`);
+ pset(ext,'Pset_WallCommon',[['IsExternal','IFCBOOLEAN','.T.'],['LoadBearing','IFCBOOLEAN','.T.'],['FireRating','IFCLABEL',"'REI 60'"],['ThermalTransmittance','IFCTHERMALTRANSMITTANCEMEASURE','0.18']]);
+ pset([walls[4].w],'Pset_WallCommon',[['IsExternal','IFCBOOLEAN','.F.'],['LoadBearing','IFCBOOLEAN','.F.'],['AcousticRating','IFCLABEL',"'Rw 44 dB'"]]);
+ assoc(ext,mat('Brick masonry',null));assoc([walls[4].w],mat('Gypsum stud',null));assoc([slab],mat('Concrete C30/37',null));
+ const wins=[],doors=[];
+ const hole=(w,u,z,wd,ht,kind,nm)=>{
+  const op=add(`IFCOPENINGELEMENT(${gid()},$,'Opening',$,$,${LP(w.pl,A3(u,0,z))},${shape([[box(wd,w.th+100,ht),null]])},$,.OPENING.)`);
+  add(`IFCRELVOIDSELEMENT(${gid()},$,$,$,${w.w},${op})`);
+  const pl=LP(w.pl,A3(u,0,z));let e;
+  if(kind==='w'){e=el(G,'IFCWINDOW',nm,pl,shape([[vert(add(`IFCRECTANGLEHOLLOWPROFILEDEF(.AREA.,$,${A2()},${f(wd)},${f(ht)},60.,$,$)`),45,ht/2,90),sFr],[vert(add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,${A2()},${f(wd-120)},${f(ht-120)})`),6,ht/2,12),sGl]]),`,${f(ht)},${f(wd)},.WINDOW.,.SINGLE_PANEL.,$`);wins.push(e);}
+  else{const q=wd/2,cl=add(`IFCCARTESIANPOINTLIST2D(((${f(-q)},0.),(${f(-q+60)},0.),(${f(-q+60)},${f(ht-60)}),(${f(q-60)},${f(ht-60)}),(${f(q-60)},0.),(${f(q)},0.),(${f(q)},${f(ht)}),(${f(-q)},${f(ht)})),$)`);
+   const frame=vert(add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,'Frame',${add(`IFCINDEXEDPOLYCURVE(${cl},$,.F.)`)})`),45,0,90);
+   const leaf=vert(add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,${A2(0,(ht-60)/2)},${f(wd-120)},${f(ht-60)})`),20,0,40);
+   e=el(G,'IFCDOOR',nm,pl,shape([[frame,sFr],[leaf,sDr]]),`,${f(ht)},${f(wd)},.DOOR.,.SINGLE_SWING_LEFT.,$`);doors.push(e);}
+  add(`IFCRELFILLSELEMENT(${gid()},$,$,$,${op},${e})`);
+ };
+ const[sw,nw,ww,ew,iw]=walls;
+ hole(sw,-2700,0,1000,2100,'d','Front door');hole(sw,300,900,1600,1300,'w','Living window');hole(sw,3000,900,1200,1300,'w','Bedroom window S');
+ hole(nw,-2600,900,1600,1300,'w','Kitchen window');hole(nw,2700,1200,900,900,'w','Bath window');
+ hole(ww,0,900,1400,1300,'w','Dining window');hole(ew,0,900,1200,1300,'w','Bedroom window E');hole(iw,-1500,0,900,2100,'d','Bedroom door');
+ pset(wins,'Pset_WindowCommon',[['IsExternal','IFCBOOLEAN','.T.'],['ThermalTransmittance','IFCTHERMALTRANSMITTANCEMEASURE','0.8'],['GlazingAreaFraction','IFCPOSITIVERATIOMEASURE','0.72']]);
+ pset(doors,'Pset_DoorCommon',[['FireRating','IFCLABEL',"'EI 30'"],['HandicapAccessible','IFCBOOLEAN','.T.']]);
+ assoc(wins,mat('Aluminium frame, triple glazing',null));assoc(doors,mat('Oak',null));
+ const cols=[1000,3200].map((x,i)=>el(G,'IFCCOLUMN',`Porch column ${i+1}`,LP(gPl,A3(x,-1500,0)),shape([[add(`IFCEXTRUDEDAREASOLID(${add(`IFCCIRCLEPROFILEDEF(.AREA.,$,${A2()},110.)`)},${A3()},${Z},2700.)`),sCo]]),',.COLUMN.'));
+ const beam=el(G,'IFCBEAM','Porch beam HEA 200',LP(gPl,A3(500,-1500,2700+95)),shape([[add(`IFCEXTRUDEDAREASOLID(${add(`IFCISHAPEPROFILEDEF(.AREA.,'HEA200',${A2()},200.,190.,6.5,10.,$,$,$)`)},${add(`IFCAXIS2PLACEMENT3D(${P(0,0,0)},${X},${Y})`)},${Z},3200.)`),sBm]]),',.BEAM.');
+ const steel=mat('Steel S355',null);assoc([beam],steel);assoc(cols,mat('Concrete C30/37',null));
+ pset([beam],'Pset_BeamCommon',[['Span','IFCPOSITIVELENGTHMEASURE','3200.'],['LoadBearing','IFCBOOLEAN','.T.']]);
+ const canopy=el(G,'IFCSLAB','Porch canopy',LP(gPl,A3(2100,-1250,2890)),shape([[box(3800,2000,120),sSl]]),',.ROOF.');
+ const rise=2100,ov=400,th=220,pts=[[-ov,0],[Dp/2,rise],[Dp+ov,0],[Dp+ov,-th],[Dp/2,rise-th],[-ov,-th]];
+ const pl=add(`IFCPOLYLINE((${pts.map(([a,b])=>P(a,b)).join(',')},${P(-ov,0)}))`);
+ const roof=el(RF,'IFCROOF','Gable roof',LP(rPl,A3(-ov,0,0)),shape([[add(`IFCEXTRUDEDAREASOLID(${add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,'Roof section',${pl})`)},${add(`IFCAXIS2PLACEMENT3D(${P(0,0,0)},${X},${Y})`)},${Z},${f(W+2*ov)})`),sRf]]),',.GABLE_ROOF.');
+ pset([roof],'Pset_RoofCommon',[['IsExternal','IFCBOOLEAN','.T.'],['ProjectedArea','IFCAREAMEASURE',f((W+2*ov)*(Dp+2*ov)/1e6)]]);assoc([roof],mat('Standing seam zinc',null));
+ const gh=rise-th;
+ for(const[x,nm]of[[0,'West gable'],[W,'East gable']]){
+  const c=add(`IFCCARTESIANPOINTLIST3D(((-125.,0.,0.),(-125.,${f(Dp/2)},${f(gh)}),(-125.,${f(Dp)},0.),(125.,0.,0.),(125.,${f(Dp/2)},${f(gh)}),(125.,${f(Dp)},0.)),$)`);
+  const tf=add(`IFCTRIANGULATEDFACESET(${c},$,.T.,((1,2,3),(4,6,5),(1,6,4),(1,3,6),(1,5,2),(1,4,5),(2,6,3),(2,5,6)),$)`);
+  const g=el(RF,'IFCWALL',nm,LP(rPl,A3(x,0,0)),add(`IFCPRODUCTDEFINITIONSHAPE($,$,(${add(`IFCSHAPEREPRESENTATION(${body},'Body','Tessellation',(${tf}))`)}))`),',.STANDARD.');
+  add(`IFCSTYLEDITEM(${tf},(${sW}),$)`);
+ }
+ const spaces=[['Living room',0,5200],['Bedroom',5200,W]].map(([nm,x0,x1])=>{const s=add(`IFCSPACE(${gid()},$,'${nm}',$,$,${LP(gPl,A3((x0+x1)/2,Dp/2,0))},${shape([[box(x1-x0-T/2-60,Dp-T,2700),null]])},'${nm}',.ELEMENT.,.INTERNAL.,$)`);qto(s,'Qto_SpaceBaseQuantities',[['NetFloorArea','IFCQUANTITYAREA',+((x1-x0-T/2-60)*(Dp-T)/1e6).toFixed(2)]]);return s;});
+ agg(gf,spaces.join(','));
+ add(`IFCRELCONTAINEDINSPATIALSTRUCTURE(${gid()},$,$,$,(${G.join(',')}),${gf})`);
+ add(`IFCRELCONTAINEDINSPATIALSTRUCTURE(${gid()},$,$,$,(${RF.join(',')}),${rf})`);
+ return`ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [ReferenceView]'),'2;1');\nFILE_NAME('sample-house.ifc','2026-11-25T08:00:00',(''),(''),'','','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n${L.join('\n')}\nENDSEC;\nEND-ISO-10303-21;\n`;
+}
+
+window.ifcViewer=S;
+resize();
+load(sampleIFC(),'sample-house.ifc');
+}
+</script>
+</body>
+</html>

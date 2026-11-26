@@ -129,6 +129,12 @@ aside{background:var(--panel);display:flex;flex-direction:column;min-height:0;bo
 .radios[hidden]{display:none}
 .radios small{color:var(--mute);font-size:13px}
 .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.orbsel{position:absolute;right:12px;top:10px;z-index:2;display:inline-flex;gap:6px;align-items:center;font-size:12.5px;color:var(--mute);background:color-mix(in srgb,var(--bg) 70%,transparent);padding:3px 4px 3px 8px;border-radius:6px}
+.orbsel select{font:inherit;font-size:13px;min-height:30px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);padding:0 4px}
+@media(pointer:coarse){.orbsel select{min-height:40px;font-size:16px}}
+.pivot{position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;border:2.5px solid #ffe600;border-radius:50%;box-shadow:0 0 0 1.5px #141414,inset 0 0 0 1.5px #141414;pointer-events:none;z-index:3}
+.pivot[hidden]{display:none}
+.pivot::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;background:#141414;border-radius:50%}
 .toast{position:absolute;left:50%;bottom:46px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:7px 8px 7px 14px;border-radius:8px;display:flex;gap:12px;align-items:center;font-size:14px;z-index:6;box-shadow:0 8px 24px rgba(0,0,0,.2);white-space:nowrap;max-width:calc(100% - 24px)}
 .toast[hidden]{display:none}
 .toast button{min-height:30px;background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 45%,transparent)}
@@ -178,6 +184,8 @@ aside{background:var(--panel);display:flex;flex-direction:column;min-height:0;bo
   <div class="hint">Drag to orbit · right-drag to pan · scroll to zoom · click to select · shift-drag to box-select · right-click for options</div>
   <div id="stat"></div>
   <div id="rubber"></div>
+  <div id="pivot" class="pivot" hidden></div>
+  <label class="orbsel" title="The point the view turns around when you drag">Orbit around <select id="orbSel"><option value="cursor">Point under cursor</option><option value="centre">Model centre</option><option value="origin">Model origin (0,0,0)</option></select></label>
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="drop">Drop your .ifc file to open it</div>
   <div id="busy"><div class="card"><div id="busyT">Loading viewer…</div><div class="bar"><i id="busyB"></i></div></div></div>
@@ -1691,7 +1699,7 @@ function updateGizmo(){
  gz.visible=false;if(!S.moveMode||gd)return;const f=gizmoFrame();if(!f||!moveTargets().length)return;
  GZ.O.copy(f.O);GZ.A=f.A;gz.position.copy(f.O);gz.quaternion.setFromRotationMatrix(new M4().makeBasis(f.A[0],f.A[1],f.A[2]));gz.visible=true;
 }
-function gzTick(){if(gz.visible)gz.scale.setScalar(Math.max(1e-3,camera.position.distanceTo(gz.position)*.16));}
+function gzTick(){if(gz.visible)gz.scale.setScalar(Math.max(1e-3,camera.position.distanceTo(gz.position)*.16));if(S.pivMark)placePivot();}
 const ndc=e=>{const r=renderer.domElement.getBoundingClientRect();return new V2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);};
 function gzHit(e){if(!gz.visible)return null;gzTick();gz.updateMatrixWorld(true);ray.setFromCamera(ndc(e),camera);const hs=ray.intersectObjects(gzPick,false);if(!hs.length)return null;
  return(hs.find(x=>x.object.userData.h.t!=='ring')||hs[0]).object.userData.h;}
@@ -1733,7 +1741,48 @@ addEventListener('pointerup',()=>endGizmo(false));addEventListener('pointercance
 addEventListener('keydown',e=>{if(e.key==='Escape'&&gd){e.stopPropagation();endGizmo(true);}},true);
 function setLocal(on){S.localAxes=on;$('#bLoc').setAttribute('aria-pressed',on);$('#bLoc').textContent=on?'Local axes':'Model axes';updateGizmo();}
 $('#bLoc').addEventListener('click',()=>setLocal(!S.localAxes));
-S.api={moveSelection,rotateSelection,gizmoFrame,setMove,setLocal,GZ,gz};
+/* ---------- view orbit: turn the view around the point under the cursor, the model centre or the model origin ---------- */
+try{S.orbit=localStorage.getItem('ifsee.orbit')||'cursor';}catch(e){S.orbit='cursor';}
+if(!['cursor','centre','origin'].includes(S.orbit))S.orbit='cursor';
+$('#orbSel').value=S.orbit;
+$('#orbSel').addEventListener('change',e=>{S.orbit=e.target.value;try{localStorage.setItem('ifsee.orbit',S.orbit);}catch(err){}e.target.blur();});
+controls.enableRotate=false;S.pivMark=null;
+function viewProj(){camera.updateMatrixWorld();camera.matrixWorldInverse.copy(camera.matrixWorld).invert();return new M4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse).elements;}
+function toScreen(M,x,y,z,r){const w=M[3]*x+M[7]*y+M[11]*z+M[15];if(w<=1e-9)return null;return[((M[0]*x+M[4]*y+M[8]*z+M[12])/w*.5+.5)*r.width,(.5-(M[1]*x+M[5]*y+M[9]*z+M[13])/w*.5)*r.height];}
+function showPivot(P){S.pivMark=P?P.clone():null;placePivot();}
+function placePivot(){const el=$('#pivot');if(!S.pivMark){el.hidden=true;return;}const r=renderer.domElement.getBoundingClientRect(),p=toScreen(viewProj(),S.pivMark.x,S.pivMark.y,S.pivMark.z,r);
+ if(!p){el.hidden=true;return;}el.style.left=p[0]+'px';el.style.top=p[1]+'px';el.hidden=false;}
+let vsCache=null;
+function visVerts(){const key=S.ei+'|'+S.tris+'|'+S.P.length;if(vsCache&&vsCache.key===key)return vsCache.pts;
+ const arrs=[];let n=0;for(const q of S.P)if(vis(q))for(const c of q.chunks){arrs.push(c.pos);n+=c.pos.length/3;}
+ const step=Math.max(1,Math.ceil(n/200000)),pts=new Float32Array(Math.ceil(n/step)*3+3);let o=0,i=0;
+ for(const a of arrs)for(let k=0;k<a.length;k+=3)if(i++%step===0){pts[o++]=a[k];pts[o++]=a[k+1];pts[o++]=a[k+2];}
+ vsCache={key,pts:pts.subarray(0,o)};return vsCache.pts;}
+function nearestVisible(e){const pts=visVerts();if(!pts.length)return null;const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,M=viewProj(),pl=S.section?secPlane:null;let best=-1,bd=1/0;
+ for(let i=0;i<pts.length;i+=3){const x=pts[i],y=pts[i+1],z=pts[i+2];if(pl&&pl.normal.x*x+pl.normal.y*y+pl.normal.z*z+pl.constant<0)continue;const p=toScreen(M,x,y,z,r);if(!p)continue;const d=(p[0]-mx)**2+(p[1]-my)**2;if(d<bd){bd=d;best=i;}}
+ return best<0?null:new V(pts[best],pts[best+1],pts[best+2]);}
+function orbitPivot(e){
+ if(S.orbit==='origin'){const{cx,cy,cz,s}=S.off;return new V(-cx*s,-cz*s,cy*s);}
+ if(S.orbit==='centre'){const b=visBox();return b.isEmpty()?controls.target.clone():b.getCenter(new V());}
+ const h=pickHit(e);if(h)return h.point;return nearestVisible(e)||controls.target.clone();
+}
+function rotateView(P,yaw,pitch){
+ const cam=camera.position,t=controls.target,up=new V(0,1,0),rot=(v,ax,a)=>v.sub(P).applyMatrix4(new M4().makeRotationAxis(ax,a)).add(P);
+ if(yaw){rot(cam,up,yaw);rot(t,up,yaw);}
+ if(pitch){const dir=t.clone().sub(cam).normalize(),right=dir.clone().cross(up);if(right.lengthSq()>1e-12){right.normalize();const nd=dir.clone().applyMatrix4(new M4().makeRotationAxis(right,pitch));if(Math.abs(nd.dot(up))<.995){rot(cam,right,pitch);rot(t,right,pitch);}}}
+ camera.lookAt(t);controls.update();
+}
+let orb=null;const ptrs=new Set();
+renderer.domElement.addEventListener('pointerdown',e=>{ptrs.add(e.pointerId);if(ptrs.size>1){orb=null;showPivot(null);return;}
+ if(e.button!==0||!controls.enabled||e.ctrlKey||e.metaKey||e.shiftKey||mv||gd||bx||!S.m)return;orb={x:e.clientX,y:e.clientY,P:null,e,moved:false};});
+addEventListener('pointermove',e=>{if(!orb||ptrs.size>1)return;const dx=e.clientX-orb.x,dy=e.clientY-orb.y;if(!orb.moved&&Math.hypot(e.clientX-orb.e.clientX,e.clientY-orb.e.clientY)<3)return;
+ if(!orb.moved){orb.moved=true;orb.P=orbitPivot(orb.e);showPivot(orb.P);}
+ orb.x=e.clientX;orb.y=e.clientY;const h=renderer.domElement.clientHeight||1;rotateView(orb.P,-2*Math.PI*dx/h,-2*Math.PI*dy/h);});
+const endOrb=e=>{ptrs.delete(e.pointerId);if(orb){orb=null;showPivot(null);}};
+addEventListener('pointerup',endOrb);addEventListener('pointercancel',endOrb);
+S.api={moveSelection,rotateSelection,gizmoFrame,setMove,setLocal,GZ,gz,orbitPivot,rotateView,showPivot,camera,controls};
+/* iOS greys out files whose type it does not know (such as .ifc), so let iPhone and iPad pick any file; the content is checked when it is read */
+if(/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1))for(const f of document.querySelectorAll('input[type=file]'))f.removeAttribute('accept');
 window.ifcViewer=S;
 loop();
 resize();

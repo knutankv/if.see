@@ -185,7 +185,7 @@ aside{background:var(--panel);display:flex;flex-direction:column;min-height:0;bo
   <div id="stat"></div>
   <div id="rubber"></div>
   <div id="pivot" class="pivot" hidden></div>
-  <label class="orbsel" title="The point the view turns around when you drag">Orbit around <select id="orbSel"><option value="cursor">Point under cursor</option><option value="centre">Model centre</option><option value="origin">Model origin (0,0,0)</option></select></label>
+  <label class="orbsel" title="The point the view turns around when you drag">Orbit around <select id="orbSel"><option value="cursor">Point under cursor</option><option value="centre">Model centre</option><option value="origin">Model origin (0,0,0)</option><option value="view">View centre (median depth)</option></select></label>
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="drop">Drop your .ifc file to open it</div>
   <div id="busy"><div class="card"><div id="busyT">Loading viewer…</div><div class="bar"><i id="busyB"></i></div></div></div>
@@ -1743,7 +1743,7 @@ function setLocal(on){S.localAxes=on;$('#bLoc').setAttribute('aria-pressed',on);
 $('#bLoc').addEventListener('click',()=>setLocal(!S.localAxes));
 /* ---------- view orbit: turn the view around the point under the cursor, the model centre or the model origin ---------- */
 try{S.orbit=localStorage.getItem('ifsee.orbit')||'cursor';}catch(e){S.orbit='cursor';}
-if(!['cursor','centre','origin'].includes(S.orbit))S.orbit='cursor';
+if(!['cursor','centre','origin','view'].includes(S.orbit))S.orbit='cursor';
 $('#orbSel').value=S.orbit;
 $('#orbSel').addEventListener('change',e=>{S.orbit=e.target.value;try{localStorage.setItem('ifsee.orbit',S.orbit);}catch(err){}e.target.blur();});
 controls.enableRotate=false;S.pivMark=null;
@@ -1761,7 +1761,15 @@ function visVerts(){const key=S.ei+'|'+S.tris+'|'+S.P.length;if(vsCache&&vsCache
 function nearestVisible(e){const pts=visVerts();if(!pts.length)return null;const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,M=viewProj(),pl=S.section?secPlane:null;let best=-1,bd=1/0;
  for(let i=0;i<pts.length;i+=3){const x=pts[i],y=pts[i+1],z=pts[i+2];if(pl&&pl.normal.x*x+pl.normal.y*y+pl.normal.z*z+pl.constant<0)continue;const p=toScreen(M,x,y,z,r);if(!p)continue;const d=(p[0]-mx)**2+(p[1]-my)**2;if(d<bd){bd=d;best=i;}}
  return best<0?null:new V(pts[best],pts[best+1],pts[best+2]);}
+function viewCentrePivot(){
+ const pts=visVerts(),M=viewProj(),cam=camera.position,dir=controls.target.clone().sub(cam).normalize(),pl=S.section?secPlane:null,ds=[];
+ for(let i=0;i<pts.length;i+=3){const x=pts[i],y=pts[i+1],z=pts[i+2];if(pl&&pl.normal.x*x+pl.normal.y*y+pl.normal.z*z+pl.constant<0)continue;
+  const w=M[3]*x+M[7]*y+M[11]*z+M[15];if(w<=1e-9)continue;const nx=(M[0]*x+M[4]*y+M[8]*z+M[12])/w,ny=(M[1]*x+M[5]*y+M[9]*z+M[13])/w;if(nx<-1||nx>1||ny<-1||ny>1)continue;
+  ds.push((x-cam.x)*dir.x+(y-cam.y)*dir.y+(z-cam.z)*dir.z);}
+ if(!ds.length)return controls.target.clone();ds.sort((a,b)=>a-b);return cam.clone().addScaledVector(dir,ds[ds.length>>1]);
+}
 function orbitPivot(e){
+ if(S.orbit==='view')return viewCentrePivot();
  if(S.orbit==='origin'){const{cx,cy,cz,s}=S.off;return new V(-cx*s,-cz*s,cy*s);}
  if(S.orbit==='centre'){const b=visBox();return b.isEmpty()?controls.target.clone():b.getCenter(new V());}
  const h=pickHit(e);if(h)return h.point;return nearestVisible(e)||controls.target.clone();
@@ -1780,7 +1788,7 @@ addEventListener('pointermove',e=>{if(!orb||ptrs.size>1)return;const dx=e.client
  orb.x=e.clientX;orb.y=e.clientY;const h=renderer.domElement.clientHeight||1;rotateView(orb.P,-2*Math.PI*dx/h,-2*Math.PI*dy/h);});
 const endOrb=e=>{ptrs.delete(e.pointerId);if(orb){orb=null;showPivot(null);}};
 addEventListener('pointerup',endOrb);addEventListener('pointercancel',endOrb);
-S.api={moveSelection,rotateSelection,gizmoFrame,setMove,setLocal,GZ,gz,orbitPivot,rotateView,showPivot,camera,controls};
+S.api={moveSelection,rotateSelection,gizmoFrame,setMove,setLocal,GZ,gz,orbitPivot,rotateView,showPivot,camera,controls,viewCentrePivot};
 /* iOS greys out files whose type it does not know (such as .ifc), so let iPhone and iPad pick any file; the content is checked when it is read */
 if(/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1))for(const f of document.querySelectorAll('input[type=file]'))f.removeAttribute('accept');
 window.ifcViewer=S;
